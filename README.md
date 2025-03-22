@@ -1,4 +1,4 @@
-![DOOM_TITLE_W](![DOOM_TITLE_W](https://i.imgur.com/M7hmBrF.jpeg)<BR>)<BR>
+![DOOM_TITLE_W](https://i.imgur.com/M7hmBrF.jpeg)<BR>
 (Bat Files and Powerscripts)
 # DOOM-bat
 
