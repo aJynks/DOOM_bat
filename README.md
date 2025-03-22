@@ -1,4 +1,4 @@
-![DOOM_TITLE_W](https://doomwiki.org/w/images/c/ce/Doom_title_wide.png)<BR>
+![DOOM_TITLE_W](![DOOM_TITLE_W](https://i.imgur.com/M7hmBrF.jpeg)<BR>)<BR>
 (Bat Files and Powerscripts)
 # DOOM-bat
 
