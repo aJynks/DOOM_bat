@@ -8,6 +8,7 @@ set "WAD_FILE=%DOOMMAKE_DIR%\build\NOX.wad"
 
 REM Store the current directory
 set "ORIGINAL_DIR=%CD%"
+cd /d %DOOMMAKE_DIR%
 
 goto :check_args
 
@@ -26,6 +27,7 @@ goto :check_args
     echo  makewad clean  - Deletes all data in the build dir
     echo  makewad fresh  - Cleans, builds, and runs Doom
     echo.
+	cd /d "%ORIGINAL_DIR%"
 	pause
     exit /b
 
@@ -41,13 +43,15 @@ if "%1"=="fresh" goto :fresh
 goto :error
 
 :run
-    call "%DSDA_DOOM_EXE%" -iwad "%IWAD_PATH%" -file "%WAD_FILE%"
-	pause
+    call "%DSDA_DOOM_EXE%" -iwad "%IWAD_PATH%" -file "%WAD_FILE%" -warp 1 -skill 4 -nosound
+	cd /d "%ORIGINAL_DIR%"
+	REM pause
     exit /b
 
 :clean
     echo ---=== CLEANING build dir ===---
     call doommake clean
+	cd /d "%ORIGINAL_DIR%"
 	pause
     exit /b
 
@@ -57,19 +61,19 @@ goto :error
     echo.
     echo ---=== BUILDING ===---
     call doommake
-	pause
+	REM pause
     cd /d "%ORIGINAL_DIR%"
-    call "%DSDA_DOOM_EXE%" -iwad "%IWAD_PATH%" -file "%WAD_FILE%"
-	pause
+    call "%DSDA_DOOM_EXE%" -iwad "%IWAD_PATH%" -file "%WAD_FILE%" -warp 1 -skill 4 -nosound
+	REM pause
     exit /b
 
 :build
     echo ---=== BUILDING ===---
     call doommake
-    pause
+    REM pause
     cd /d "%ORIGINAL_DIR%"
-    call "%DSDA_DOOM_EXE%" -iwad "%IWAD_PATH%" -file "%WAD_FILE%"
-    pause
+    call "%DSDA_DOOM_EXE%" -iwad "%IWAD_PATH%" -file "%WAD_FILE%" -warp 1 -skill 4 -nosound
+    REM pause
     exit /b
 
 :error
