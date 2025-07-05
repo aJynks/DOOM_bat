@@ -1,41 +1,78 @@
-# RUN Doom
+=============================================================================
+RUN Doom
 
-G'day aJynks here....
+G’day — aJynks here...
 
-This is a bat file I made to help me quickly test my own wads for my hobby project in various engines. I had planned to only have it work on [kexDoom](https://www.gog.com/en/game/doom_doom_ii), [dsda-DOOM](https://github.com/kraflab/dsda-doom)] and [gzDOOM](https://zdoom.org/downloads)]. When I was writing it I thought, fuck it, and made it for a number of other engines as well.
+This is a batch file I made to help me quickly test my own WADs for my hobby project in various engines. I originally intended it to work only with kexDoom, DSDA-Doom, and GZDoom. But while I was writing it I thought, bugger it, and made it support several other engines too.
 
-This bat file calls a powershell script. I almost got it running in a bat file, but it was just easier to do in powershell. It should just work, but you may need to enable powerscipt to be called outside of powershell.
+This batch file calls a PowerShell script. I almost got it working entirely in batch, but it was just easier to handle in PowerShell. It should just work, but you may need to enable PowerShell script execution outside of PowerShell (see Execution Policies).
 
+=============================================================================
+What exactly does this batch file do?
 
-## What exactly dose this bat file do?
+It launches Doom and allows you to select a source port via command line.
+It also automatically loads a WAD file if it is the only .wad file in the current directory.
 
-This will simply load doom and allow you to select a port via command line. It will also automatically load any a wad file if it is the single file in the directory.
+=============================================================================
+How to use this batch file
 
-## How to use this bat file
+This batch file is designed to be placed somewhere in your system’s environment path, so you can run it from anywhere in the command line.
 
-This bat file is designed to be used in your enviroment path so you can run it form anywhere.
+Usage:
+  doom [SourcePort] [IWAD] [other arguments...]
 
-**usage :** doom (runs doom useing the default sourceport)
-**prams :** SourcePortName (writting "cherry" for example will load Cherry Doom
-**prams :** iWADname (typing a iwad will load that iwad)
-**prams :** it will also acept any additional commands that the source port uses. -file, -warp, -skill etc etc. Liturally all of them
+Parameters:
+- SourcePortName : e.g. cherry to launch Cherry Doom
+- IWADName       : e.g. tnt or doom2 to specify which IWAD to use
+- Additional arguments : any valid arguments accepted by the source port
+                         (e.g. -file, -warp, -skill, -nomonsters, etc.)
 
-**examples :** 
-* doom (loads doom with the default source port and default iwad, if there is a single wad file in the dir you run it from this will also be loaded.
-* doom tnt -warp 1 -skill 4 (loads the iwad TNT, in the default source port, with the war and skill prams)
-* doom helion -warp 1 -skill 4 (load defailt iwad in helion source port, with warp and skill prams)
-* doom crispy doom (loads crispy source port, loads doom.wad and if it finds a single wad file it will load it)
+Examples:
+  doom
+    Loads Doom with the default source port and IWAD.
+    If there is exactly one WAD file in the current directory, it will be auto-loaded.
 
-Remeber it will only auto load a wad file if it is THE ONLY wad file found at the locaiton you run the script. If there is more than 1 wad file, you will still need to manually type -file filename.wad (no path needed)
+  doom tnt -warp 1 -skill 4
+    Loads the IWAD TNT.WAD using the default source port, and warps to map 1 on skill level 4.
 
-## How to set it up
+  doom helion -warp 1 -skill 4
+    Uses Helion as the source port, default IWAD, and warps to map 1, skill level 4.
 
-* Place both the batfile and the powerscript in a direcotry that is added to your enviroment path so it can be run from any directory.
-* open doom_runDoomWad.ps1 in a text editor. 
-* Edit the paths so they point to the various source ports and iwads. The names of these are also the commands to run them!
-* Do not forget to also set the default sourceport for the variable $defaultPort
+  doom crispy doom
+    Launches Crispy Doom with doom.wad.
+    If there is only one WAD in the directory, it will be auto-loaded.
 
-That is it!!
+Note:
+  It will only auto-load a .wad file if it is the ONLY one in the directory
+  where the script is executed.
+  If more than one .wad file is present, you must manually specify it using
+  -file filename.wad (no path required).
+
+=============================================================================
+How to set it up
+
+1. Place both the .bat and .ps1 files in a directory that is included in your system’s PATH.
+2. Open doom_runDoomWad.ps1 in a text editor.
+3. Edit the $sourcePort_exes and $iwad_paths variables to match the locations of your engines and IWADs.
+   The keys you assign (e.g., "dsda", "crispy", "gz") become the commands you type in the doom call.
+4. Set your default source port by changing:
+     $defaultPort = $sourcePort_exes["dsda"]
+   to something like:
+     $defaultPort = $sourcePort_exes["kex"]
+
+=============================================================================
+How to set Defaults
+
+Edit the "Default values" section inside doom_runDoomWad.ps1.
+
+To use KEX as your default source port:
+  $defaultPort = $sourcePort_exes["kex"]
+
+Just replace "kex" with the name of the source port you want as default.
+
+=============================================================================
+
+That’s it!
 
 Have fun and SLAUGHTER DEMONS
---aJynks
+-- aJynks

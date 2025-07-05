@@ -1,0 +1,59 @@
+:: =============================================================================
+:: Doom Launcher Batch Script
+::
+:: This script launches the specified Doom engine with configurable IWAD, WAD files,
+:: and command-line options.
+::
+:: === How to Configure ===
+:: - Edit the variables below in the "Editable Config" section to change:
+::     * ENGINE_EXE        : Path to your Doom engine executable
+::     * IWAD_FILE         : Path to your IWAD file (e.g. doom2.wad)
+::     * MAP_WAD           : The name of the build WAD to test; this is usually
+::                           located at "./build/yourmapname.wad"
+::     * OPTIONAL_WAD1..5  : Optional additional WAD files to load (full paths only).
+::                           Leave empty ("") to skip.
+::
+:: === How to Use ===
+:: Run this batch file with optional command-line arguments:
+::
+::   -menu             : Launch the game without warping, so you see the title screen
+::                       and game menu instead of starting a map.
+::   -skill 4          : If a skill is not specified, it will default to -skill 4
+::   -warp 1           : If a warp map is not specified, it will default to -warp 1
+::
+::   Additionally, all source port command-line options will be passed through
+::   directly to the engine.
+::   Example: -nomonsters -nosound
+::
+:: Examples:
+::   run.bat -warp 3 -skill 2
+::   run.bat -menu
+::   run.bat -nosound -warp 5
+::   run.bat -nomonsters -nosound -skill 1
+::
+:: The script prints the final command line before launching the engine.
+::
+::
+:: === Additional DoomTools Texture Build Feature ===
+::
+:: If you wish to use the Texture1 trick to enable proper previews in Ultimate Doom Builder (UDB),
+:: you should create two versions of your texture1.txt file:
+::
+::     1. "RESTRICTED" — contains only your custom texture definitions
+::     2. "ALL"        — includes both custom and IWAD texture definitions
+::
+:: To do this:
+::   - Copy the default texture1.txt
+::   - Generate the full version using `doommake rebuildtextures`
+::   - Save both versions in a directory of your choice
+::
+:: Then, in this batch file, configure the === TextureX Data === section
+:: to point to that directory and the two file names.
+::
+:: Use the following flags to switch modes:
+::   -setTxA   : Copies texture1-ALL.txt into the project directory and runs `doommake textures`
+::   -setTxR   : Copies texture1-RESTRICTED.txt into the project directory and runs `doommake textures`
+::
+:: See my DoomTools texturing tutorial for a full walkthrough:
+::   https://youtu.be/32MVnFJrZlk?t=1303 (at 21:43)
+:: =============================================================================

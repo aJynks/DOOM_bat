@@ -1,42 +1,49 @@
 # dmod
 
-G'day aJynks here....
+G'day, aJynks here...
 
-This is a small batfile I use in conjunction with [DOOMRUNNER](https://github.com/Youda008/DoomRunner)]. Basically Doomrunner is my favriout doom launcher and it has a cool feature that will store savegames and screen shots in directories based on the name of the name of the profile you are running.
+This is a small batch file I use in conjunction with [DOOMRunner](https://github.com/Youda008/DoomRunner). DoomRunner is my favourite Doom launcher, and it has a neat feature where it stores savegames and screenshots in directories based on the name of the profile you're running.
 
-I like to have a kind of "looksee" profile that allows me to simply play a wad quickly, but for larger wads that I intend of spending a lot of time in I like to have everythign seperated. I can change htkeys, the settings in the source port, record and play demos and nothing I do touches my other wads I am playing.
+I like to have a general "look-see" profile that lets me quickly play through a WAD. But for larger WADs that I plan to spend more time with, I prefer everything to be separated. That way, I can change hotkeys, source port settings, record/play demos, and keep it all isolated from other projects I'm playing.
 
-This was mainly done due to the massive ammount of options and ini stuff used by [gzDOOM](https://zdoom.org/downloads)]. Even though I mainly use [dsda-DOOM](https://github.com/kraflab/dsda-doom)].
+This setup was mainly motivated by the sheer number of configuration options and INI clutter used by [GZDoom](https://zdoom.org/downloads), though I primarily use [DSDA-Doom](https://github.com/kraflab/dsda-doom).
 
-## What exactly dose this bat file do?
+## What exactly does this batch file do?
 
-It creates a directory in your condif dir, based on the command you enter. It then copies your "default" configs into that dir for use with Doomrunner. In teh case of gzDoom it also copies in a CFG file and edits that file so the copied ini file is pointing to the new CFG file. 
+- Creates a directory inside your config folder, named after the WAD/profile you specify.
+- For GZDoom, it copies your "default" config files (`.ini` and `.cfg`) into the new directory.
+- It also creates three subdirectories: `Demos`, `Saves`, and `Screenshots` — useful for DoomRunner’s data redirection system.
 
-## How to use this bat file
+## How to use this batch file
 
-This bat file is designed to be used in your enviroment path so you can run it form anywhere.
+This batch file is designed to be added to your system environment path so you can run it from any location in the terminal.
 
-**usage :** dmod "Wad Name"
-**prams :** pistol will add pistol starts to GZDoom config
-**prams :** on will enable mouse look, crouch and jump in gzDoom (these are all turned off by default)
+**Usage:**  
+`dmod "Wad Name"`
 
-**example :** dmod "Wad Name" pistol
+**Parameters:**  
+- `pistol` – Enables pistol start in the GZDoom config.  
+- `on` – Enables freelook, crouching, and jumping in GZDoom (these are disabled by default).
 
-use quotes if you have a space in your Profil Name. This will create a config dir for called "Wad Name" and edit the gz cfg file to make it psitol start.
+**Example:**  
+`dmod "Wad Name" pistol`
 
-In doomrunner simply create a profile with the exact same wad name. Make sure in the "data directories" tab you have ticked the options to use preset dirs.
+If your profile name has spaces, enclose it in quotes. The script will create a config directory called `Wad Name` and set up the GZDoom config to enable pistol start.
+
+In DoomRunner, create a profile with the *exact same* name as the one used in the command. Under the **Data Directories** tab, make sure to enable the options to use preset folders for saves, demos, and screenshots.
 
 ## How to set it up
 
-Install gzDoom, and dsda-Doom (at the momment I have not added support for other engines but that may come). Load them up and set them up as you wish. Then copy the ini and cfg file for gzDoom and the cfg file for dsda-Doom and place them in the root of your config dir. I like to set them to read only as well to make sure they stay put.
+1. Install GZDoom and DSDA-Doom. (Currently, support for other engines isn’t implemented but may be added in the future.)
+2. Configure each engine as you prefer.
+3. Copy the default `.ini` and `.cfg` files for GZDoom, and the `.cfg` file for DSDA-Doom, into your chosen config root directory. You may wish to set them to read-only to prevent accidental changes.
 
-These will be your default setup files, alowing any new profile to basically be ready to go form launch.
+These will act as template setup files — allowing each new profile to inherit a working default setup.
 
-Now edit the bat file.
-* set configFilePath = "path/to/configDir/"
-* set gzCFG=filenameOfDefault_gzDoom.cfg
-* set gzINI=filenameOfDefault_gzDoom.ini
-* set dsdaCFG=filenameOfDefault_dsda-Doom.cfg
+4. Edit the batch file and update the following paths:
 
-Have fun and SLAUGHTER DEMONS
---aJynks
+```bat
+set configFilePath=path\to\your\ConfigData\
+set gzCFG=yourDefaultGZdoom.cfg
+set gzINI=yourDefaultGZdoom.ini
+set dsdaCFG=yourDefaultDSDAdoom.cfg
