@@ -1,9 +1,9 @@
 #-------------------------------------------------------------------------------------------------
 # Editable Values
 $sourcePort_exes = @{
-    "nyan"   = "d:\Projects\Doom Projects\_Resources\_Apps\_Engines\nyan-Doom\nyan-doom.exe"
+    "nyan"   = "d:\Games\Doom\_SourcePort\Nyan-Doom\nyan-doom-1.4.0\nyan-doom.exe"
     "dsda"   = "d:\Projects\Doom Projects\_Resources\_Apps\_Engines\dsda-Doom\dsda-doom.exe"
-    "kex"    = "d:\Projects\Doom Projects\_Resources\_Apps\_Engines\DOOM + DOOM II\doom_gog.exe"
+    "kex"    = "d:\Games\Doom\_SourcePort\Kex-Doom\DOOM + DOOM II\doom_gog.exe"
     "cherry" = "d:\Projects\Doom Projects\_Resources\_Apps\_Engines\cherry-Doom\Cherry-Doom-2.0.0\cherry-doom.exe"
     "gz"     = "d:\Projects\Doom Projects\_Resources\_Apps\_Engines\gz-Doom\gz-4.14.2\gzdoom.exe"
     "choco"  = "d:\Projects\Doom Projects\_Resources\_Apps\_Engines\Cocolate-Doom\chocolate-doom-3.1.0\chocolate-doom.exe"
@@ -14,14 +14,14 @@ $sourcePort_exes = @{
 }
 
 $iwads = @{
-    "doom"     = "d:\Projects\Doom Projects\_Resources\_Apps\_Engines\_IWADs\doom.wad"
-    "doom2"    = "d:\Projects\Doom Projects\_Resources\_Apps\_Engines\_IWADs\doom2.wad"
-    "tnt"      = "d:\Projects\Doom Projects\_Resources\_Apps\_Engines\_IWADs\Final Doom 1 - TNT - Evilution (tnt).wad"
-    "plutonia" = "d:\Projects\Doom Projects\_Resources\_Apps\_Engines\_IWADs\Final Doom 2 - Plutonia Experimen﻿t, The - (plutonia) .wad"
-    "heretic"  = "d:\Projects\Doom Projects\_Resources\_Apps\_Engines\_IWADs\Hexen 2 (HERETIC).WAD"
-    "hexen"    = "d:\Projects\Doom Projects\_Resources\_Apps\_Engines\_IWADs\Hexen 1 (HEXEN).WAD"
-    "free1"    = "d:\Projects\Doom Projects\_Resources\_Apps\_Engines\_IWADs\Freedoom 1.wad"
-    "free2"    = "d:\Projects\Doom Projects\_Resources\_Apps\_Engines\_IWADs\Freedoom 2.wad"
+    "doom"     = "d:\Games\Doom\_SourcePort\_iwads\doom (kex)"
+    "doom2"    = "d:\Games\Doom\_SourcePort\_iwads\doom2 (kex).wad"
+    "tnt"      = "d:\Games\Doom\_SourcePort\_iwads\Final Doom 1 - TNT - Evilution (tnt).wad"
+    "plutonia" = "d:\Games\Doom\_SourcePort\_iwads\Final Doom 2 - Plutonia Experimen﻿t, The - (plutonia) .wad"
+    "heretic"  = "d:\Games\Doom\_SourcePort\_iwads\Hexen 2 (HERETIC).WAD"
+    "hexen"    = "d:\Games\Doom\_SourcePort\_iwads\Hexen 1 (HEXEN).WAD"
+    "free1"    = "d:\Games\Doom\_SourcePort\_iwads\Freedoom 1.wad"
+    "free2"    = "d:\Games\Doom\_SourcePort\_iwads\Freedoom 2.wad"
 }
 
 # Default values
