@@ -23,6 +23,7 @@
 #     dmake rebuildtextures => doommake rebuildtextures
 #     dmake release     => doommake release + runDoom
 #     dmake textures    => doommake textures
+#     dmake waddir      => create ./src/wads/textures
 #     dmake help / -help / --help / /? => show help
 
 
@@ -77,7 +78,7 @@ $userWarpSpecified  = $false
 $userSkillSpecified = $false
 $useSound           = $false   # false => add -nosound
 
-# build (default), run, clean, fresh, --targets, targets, help
+# build (default), run, clean, fresh, --targets, targets, help, waddir
 $command  = $null
 $showHelp = $false
 
@@ -144,6 +145,9 @@ function Show-Help {
     Write-Host "  dmake rebuildtextures -> doommake rebuildtextures" -ForegroundColor Gray
     Write-Host "  dmake release       -> doommake release + run Doom" -ForegroundColor Gray
     Write-Host "  dmake textures      -> doommake textures" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "UTILITY COMMANDS:" -ForegroundColor Yellow
+    Write-Host "  dmake waddir        -> create ./src/wads/textures (and parents if needed)" -ForegroundColor Gray
     Write-Host ""
     Write-Host "PORT / IWAD SELECTION:" -ForegroundColor Yellow
     Write-Host "  Ports (keys): nyan, dsda, kex, uz, helion, woof, cherry, choco, crispy, nugget" -ForegroundColor Gray
@@ -297,6 +301,13 @@ for ($i = 0; $i -lt $args.Count; $i++) {
     if ($key -eq "textures") {
         if ($command -and $command -ne "textures") { $command = "error"; break }
         $command = "textures"
+        continue
+    }
+
+    # NEW COMMAND: WADDIR ----------------------------------------------
+    if ($key -eq "waddir") {
+        if ($command -and $command -ne "waddir") { $command = "error"; break }
+        $command = "waddir"
         continue
     }
 
@@ -718,6 +729,27 @@ switch ($command) {
             -DefaultWarp $defaultWarp `
             -DefaultSkill $defaultSkill `
             -ExtraArgs $extraArgs
+    }
+
+    # NEW COMMAND: WADDIR ------------------------------------------------
+    "waddir" {
+        Write-Host "---=== CREATING WAD DIRS ===---" -ForegroundColor Yellow
+
+        $srcDir      = Join-Path $projectRoot "src"
+        $wadsDir     = Join-Path $srcDir "wads"
+        $texturesDir = Join-Path $wadsDir "textures"
+
+        foreach ($dir in @($srcDir, $wadsDir, $texturesDir)) {
+            if (-not (Test-Path $dir)) {
+                New-Item -ItemType Directory -Path $dir | Out-Null
+                Write-Host ("Created: {0}" -f $dir) -ForegroundColor DarkGreen
+            }
+            else {
+                Write-Host ("Exists:  {0}" -f $dir) -ForegroundColor DarkGray
+            }
+        }
+
+        exit 0
     }
 
     default {

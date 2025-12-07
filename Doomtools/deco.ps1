@@ -93,14 +93,24 @@ function Show-DecoHelp {
     Write-Host "   build" -ForegroundColor Green
     Write-Host "       Builds the default script:" -ForegroundColor Gray
     Write-Host "         src/decohack/main.dh" -ForegroundColor Gray
+    Write-Host "       Outputs:" -ForegroundColor Gray
+    Write-Host "         build/_deh/main.dh   (source copy)" -ForegroundColor DarkGray
+    Write-Host "         build/_deh/main.deh  (DeHackEd patch)" -ForegroundColor DarkGray
+    Write-Host "         build/_deh/main.wad  (WAD with DEHACKED lump, via wadmerge)" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "   build <file.dh>" -ForegroundColor Green
     Write-Host "       Builds a specific .dh file found anywhere under src/decohack/." -ForegroundColor Gray
-    Write-Host "       Errors if more than one file matches the name." -ForegroundColor Gray
+    Write-Host "       Uses the file's basename for outputs, e.g.:" -ForegroundColor Gray
+    Write-Host "         src/decohack/weird/lost.dh  ->" -ForegroundColor DarkGray
+    Write-Host "           build/_deh/lost.dh" -ForegroundColor DarkGray
+    Write-Host "           build/_deh/lost.deh" -ForegroundColor DarkGray
+    Write-Host "           build/_deh/lost.wad" -ForegroundColor DarkGray
     Write-Host ""
 
     Write-Host "   <file.dh>" -ForegroundColor Green
     Write-Host "       Shortcut for 'deco build <file.dh>'." -ForegroundColor Gray
+    Write-Host "       If you omit the extension, '.dh' is assumed." -ForegroundColor Gray
+    Write-Host "       Example: 'deco lost' == 'deco build lost.dh'." -ForegroundColor DarkGray
     Write-Host ""
 
     Write-Host "   dump-constants" -ForegroundColor Green
@@ -137,19 +147,21 @@ function Show-DecoHelp {
     Write-Host ""
 
     Write-Host " NOTES:" -ForegroundColor Yellow
-    Write-Host "   - Running 'deco' with no arguments builds main.dh." -ForegroundColor Gray
-    Write-Host "   - Running 'deco <file.dh>' builds that .dh file." -ForegroundColor Gray
+    Write-Host "   - Running 'deco' with no arguments builds main.dh and main.wad." -ForegroundColor Gray
+    Write-Host "   - Running 'deco <name>' builds src/decohack/<name>.dh (or finds it" -ForegroundColor Gray
+    Write-Host "     anywhere under src/decohack/) and creates <name>.deh / <name>.dh / <name>.wad." -ForegroundColor Gray
     Write-Host "   - Running 'deco --help' calls the real decohack help." -ForegroundColor Gray
-    Write-Host "   - All dump files are stored under:" -ForegroundColor Gray
-    Write-Host "         src/decohack/_dump/" -ForegroundColor Gray
+    Write-Host "   - All build outputs (deh/dh/wad) live under:" -ForegroundColor Gray
+    Write-Host "         build/_deh/" -ForegroundColor Gray
     Write-Host ""
 
     Write-Host "==================================================" -ForegroundColor Cyan
     Write-Host ""
 }
 
+
 # -------------------------------------------------------------------------
-# build logic
+# build logic (CHANGED: basename-based outputs)
 # -------------------------------------------------------------------------
 
 function Invoke-DecoBuild {
@@ -169,16 +181,13 @@ function Invoke-DecoBuild {
         exit 1
     }
 
-    $dehOut = "./build/_deh/dehacked.deh"
-    $srcOut = "./build/_deh/decohack.dh"
-
-    Ensure-DirectoryForFile $dehOut
-    Ensure-DirectoryForFile $srcOut
+    $target   = $null
+    $baseName = $null
 
     # Default main.dh
     if (-not $DhTarget) {
-        $mainPath = Join-Path $srcDecoDir "main.dh"
-        if (-not (Test-Path $mainPath)) {
+        $target = Join-Path $srcDecoDir "main.dh"
+        if (-not (Test-Path $target)) {
             Write-Host ""
             Write-Host "==================================================" -ForegroundColor Red
             Write-Host "  ERROR: main.dh is missing"                       -ForegroundColor Red
@@ -186,45 +195,83 @@ function Invoke-DecoBuild {
             Write-Host ""
             exit 1
         }
+        $baseName = "main"
+    }
+    else {
+        # Specific target (allow name with or without .dh)
+        $dhName = $DhTarget
+        if (-not $dhName.ToLower().EndsWith(".dh")) { $dhName += ".dh" }
 
-        Show-FinalCommand $mainPath $dehOut $srcOut
-        & decohack $mainPath "-o" $dehOut "-s" $srcOut
-        exit $LASTEXITCODE
+        $matches = Get-ChildItem $srcDecoDir -Recurse -File | Where-Object { $_.Name -ieq $dhName }
+
+        if ($matches.Count -eq 0) {
+            Write-Host ""
+            Write-Host "==================================================" -ForegroundColor Red
+            Write-Host "  ERROR: Could not find '$dhName'"                  -ForegroundColor Red
+            Write-Host "==================================================" -ForegroundColor Red
+            Write-Host ""
+            exit 1
+        }
+
+        if ($matches.Count -gt 1) {
+            Write-Host ""
+            Write-Host "==================================================" -ForegroundColor Red
+            Write-Host "  ERROR: Multiple files named '$dhName'"            -ForegroundColor Red
+            Write-Host "==================================================" -ForegroundColor Red
+            foreach ($m in $matches) { Write-Host "  - $($m.FullName)" -ForegroundColor Yellow }
+            Write-Host ""
+            exit 1
+        }
+
+        $target   = $matches[0].FullName
+        $baseName = [System.IO.Path]::GetFileNameWithoutExtension($matches[0].Name)
     }
 
-    # Specific target
-    $dhName = $DhTarget
-    if (-not $dhName.ToLower().EndsWith(".dh")) { $dhName += ".dh" }
+    # Outputs based on dh basename
+    $dehOut  = "./build/_deh/$baseName.deh"
+    $srcOut  = "./build/_deh/$baseName.dh"
+    $wadOut  = "./build/_deh/$baseName.wad"
+    $wadScript = "./build/_deh/$baseName.wm.txt"
 
-    $matches = Get-ChildItem $srcDecoDir -Recurse -File | Where-Object { $_.Name -ieq $dhName }
+    Ensure-DirectoryForFile $dehOut
+    Ensure-DirectoryForFile $srcOut
+    Ensure-DirectoryForFile $wadOut
+    Ensure-DirectoryForFile $wadScript
 
-    if ($matches.Count -eq 0) {
-        Write-Host ""
-        Write-Host "==================================================" -ForegroundColor Red
-        Write-Host "  ERROR: Could not find '$dhName'"                  -ForegroundColor Red
-        Write-Host "==================================================" -ForegroundColor Red
-        Write-Host ""
-        exit 1
-    }
-
-    if ($matches.Count -gt 1) {
-        Write-Host ""
-        Write-Host "==================================================" -ForegroundColor Red
-        Write-Host "  ERROR: Multiple files named '$dhName'"           -ForegroundColor Red
-        Write-Host "==================================================" -ForegroundColor Red
-        foreach ($m in $matches) { Write-Host "  - $($m.FullName)" -ForegroundColor Yellow }
-        Write-Host ""
-        exit 1
-    }
-
-    $target = $matches[0].FullName
+    # 1) Run decohack -> produce .deh + .dh
     Show-FinalCommand $target $dehOut $srcOut
     & decohack $target "-o" $dehOut "-s" $srcOut
-    exit $LASTEXITCODE
+    $code = $LASTEXITCODE
+    if ($code -ne 0) {
+        exit $code
+    }
+
+    # 2) Generate a wadmerge script file for this patch
+    $scriptLines = @(
+        "CREATE out"
+        "MERGEFILE out $($dehOut.Replace('\','/')) DEHACKED"
+        "FINISH out $($wadOut.Replace('\','/'))"
+        "END"
+    )
+
+    $scriptLines | Set-Content -Path $wadScript -Encoding ASCII
+
+    # 3) Run wadmerge
+    $relScript = Get-RelativePath $wadScript
+    Write-Host ("wadmerge {0}" -f $relScript) -ForegroundColor Yellow
+    & wadmerge $wadScript
+    $mergeExit = $LASTEXITCODE
+
+    # 4) CLEAN UP — delete the temporary wadmerge script
+    Remove-Item $wadScript -ErrorAction SilentlyContinue
+
+    exit $mergeExit
 }
 
+
+
 # -------------------------------------------------------------------------
-# dump-constants logic (comma-based patterns with findstr)
+# dump-constants logic (unchanged)
 # -------------------------------------------------------------------------
 
 function Invoke-DumpConstants {
@@ -308,7 +355,7 @@ function Invoke-DumpConstants {
 }
 
 # -------------------------------------------------------------------------
-# dump-pointers logic (block-based, with save)
+# dump-pointers logic (unchanged)
 # -------------------------------------------------------------------------
 
 function Invoke-DumpPointers {
@@ -452,7 +499,7 @@ function Invoke-DumpPointers {
 }
 
 # -------------------------------------------------------------------------
-# dump-pointers-html logic
+# dump-pointers-html logic (unchanged)
 # -------------------------------------------------------------------------
 
 function Invoke-DumpPointersHtml {
@@ -520,7 +567,7 @@ if ($Args.Count -gt 0 -and $Args[0].ToLower() -eq 'dump-pointers') {
 if ($Args.Count -gt 0 -and $Args[0].ToLower() -eq 'dump-pointers-html') {
     $tail = if ($Args.Count -gt 1) { $Args[1..($Args.Count-1)] } else { @() }
     Invoke-DumpPointersHtml $tail
-    exit $LASTEXITCODE
+    exit 0
 }
 
 # build
@@ -535,8 +582,9 @@ if ($Args.Count -eq 0) {
     exit $LASTEXITCODE
 }
 
-# single .dh file
-if ($Args.Count -eq 1 -and $Args[0].ToLower().EndsWith(".dh")) {
+# single file name (with or without .dh) -> build
+# (but skip flags like -version so they pass to real decohack)
+if ($Args.Count -eq 1 -and -not $Args[0].StartsWith('-')) {
     Invoke-DecoBuild $Args[0]
     exit $LASTEXITCODE
 }
