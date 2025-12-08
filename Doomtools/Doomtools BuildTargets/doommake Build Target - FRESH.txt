@@ -1,0 +1,15 @@
+/****************************************************************************
+ * TARGET: fresh
+ ****************************************************************************
+ * Cleans entire build dir
+ * Runs default make target.
+ * Creates a release and packages up the distribution.
+ * doommake fresh
+ ****************************************************************************/
+check entry fresh(args) {
+	doClean();
+	doInit();
+	doAll();
+	doRelease();
+	doDist();
+}
