@@ -133,6 +133,7 @@ function Show-Help {
     Write-Host "    Wads:" -ForegroundColor Gray
     Write-Host "    release = ./build/MyProject.wad" -ForegroundColor Gray
     Write-Host "    dehacked = ./build/dehacked.wad" -ForegroundColor Gray
+    Write-Host "    iwad = D:/.../doom2.wad" -ForegroundColor Gray
     Write-Host "" -ForegroundColor Gray
     Write-Host "    Default Warps" -ForegroundColor Gray
     Write-Host "    warp = 1" -ForegroundColor Gray
@@ -142,6 +143,7 @@ function Show-Help {
     Write-Host "  - release is REQUIRED (must exist)" -ForegroundColor White
     Write-Host "  - dehacked is OPTIONAL (if missing, it is ignored)" -ForegroundColor White
     Write-Host "  - warp/skill are DEFAULTS only; CLI overrides them if provided" -ForegroundColor White
+    Write-Host "  - If you include the word 'menu' anywhere (project folders only), warp/skill are ignored." -ForegroundColor White
 
     Write-SectionHeader "OPTIONS PASS-THROUGH"
     Write-Host "  Any arguments not recognised as PORT/IWAD/PAK are passed to the port." -ForegroundColor White
@@ -246,6 +248,42 @@ function Has-Arg {
     }
 
     return $false
+}
+
+function Remove-FlagWithValue {
+    param(
+        [string[]]$ArgsList,
+        [string]$Flag   # e.g. "-warp" or "-skill"
+    )
+
+    if ($null -eq $ArgsList) { return @() }
+
+    $flagLower = $Flag.ToLowerInvariant()
+    $out = @()
+
+    for ($i = 0; $i -lt $ArgsList.Count; $i++) {
+        $a = $ArgsList[$i]
+        if ($null -eq $a) { continue }
+
+        $s = $a.ToString()
+        $sl = $s.ToLowerInvariant()
+
+        # exact match: -warp (drop it and its next arg)
+        if ($sl -eq $flagLower) {
+            if ($i -lt ($ArgsList.Count - 1)) { $i++ }
+            continue
+        }
+
+        # merged forms: -warp7, -warp=7, -warp:7 (drop)
+        if ($sl.StartsWith($flagLower) -and $sl.Length -gt $flagLower.Length) {
+            $next = $sl.Substring($flagLower.Length, 1)
+            if ($next -match '^[0-9=:\-]$') { continue }
+        }
+
+        $out += $s
+    }
+
+    return ,$out
 }
 
 #-------------------------------------------------------------------------------------------------
@@ -358,6 +396,19 @@ function Get-DoomMakeProjectName {
     return $name
 }
 
+function Get-DoomMakeIwadPath {
+    param([string]$DoomMakePropsPath)
+
+    if (!(Test-Path -LiteralPath $DoomMakePropsPath)) { return $null }
+
+    $line = Get-Content -LiteralPath $DoomMakePropsPath -ErrorAction SilentlyContinue |
+        Where-Object { $_ -match '^\s*doommake\.iwad\s*=' } |
+        Select-Object -First 1
+
+    if ([string]::IsNullOrWhiteSpace($line)) { return $null }
+    return ($line -split '=', 2)[1].Trim()
+}
+
 function Ensure-DoomLoaderConf {
     param(
         [string]$ConfPath,
@@ -368,13 +419,26 @@ function Ensure-DoomLoaderConf {
         return
     }
 
+    $doommakePropsPath = Join-Path (Get-Location) "doommake.properties"
+    $iwadPath = Get-DoomMakeIwadPath -DoomMakePropsPath $doommakePropsPath
+
+    # NEW: If IWAD filename indicates Doom1-style episodes, default warp should be "1 1"
+    $warpDefault = "1"
+    if (-not [string]::IsNullOrWhiteSpace($iwadPath)) {
+        $iwadFile = [System.IO.Path]::GetFileName($iwadPath).ToLowerInvariant()
+        if ($iwadFile -in @("doom.wad", "doom1.wad", "free1.wad", "freedoom1.wad")) {
+            $warpDefault = "1 1"
+        }
+    }
+
     $content = @(
         "Wads:",
         "release = $ReleaseWadRelPath",
         "dehacked = ./build/dehacked.wad",
+        ("iwad = " + $iwadPath),
         "",
         "Default Warps",
-        "warp = 1",
+        ("warp = " + $warpDefault),
         "skill = 4",
         ""
     )
@@ -395,6 +459,7 @@ function Read-DoomLoaderConf {
     $cfg = [ordered]@{
         release  = $null
         dehacked = $null
+        iwad     = $null
         warp     = $null
         skill    = $null
     }
@@ -417,6 +482,7 @@ function Read-DoomLoaderConf {
             switch ($k) {
                 "release"  { $cfg.release  = $v }
                 "dehacked" { $cfg.dehacked = $v }
+                "iwad"     { $cfg.iwad     = $v }
                 "warp"     { $cfg.warp     = $v }
                 "skill"    { $cfg.skill    = $v }
             }
@@ -459,6 +525,12 @@ if ($hasDoomMakeProject) {
     Ensure-DoomLoaderConf -ConfPath $confPath -ReleaseWadRelPath $releaseRel
     $loader = Read-DoomLoaderConf -ConfPath $confPath
 
+    # menu mode (project only): if 'menu' is anywhere, ignore ALL -warp/-skill (CLI + conf)
+    $menuMode = $false
+    foreach ($a in $command_raw) {
+        if ($null -ne $a -and $a.ToString().ToLowerInvariant() -eq "menu") { $menuMode = $true; break }
+    }
+
     # Parse args for port/iwad/pak and passthrough flags
     $usedPortName = $defaultPortName
     $usedIwadName = $defaultIwadName
@@ -471,6 +543,11 @@ if ($hasDoomMakeProject) {
     $usedPakNames = @()
 
     foreach ($arg in $command_raw) {
+
+        # swallow 'menu' token so ports never see it as a filename/arg
+        if ($null -ne $arg -and $arg.ToString().ToLowerInvariant() -eq "menu") {
+            continue
+        }
 
         if ($iwads.ContainsKey($arg)) {
             $usediWad = $iwads[$arg]
@@ -497,6 +574,12 @@ if ($hasDoomMakeProject) {
         }
 
         $filteredArgs += $arg
+    }
+
+    # In DoomMake mode, IWAD comes from doom-loader.conf (override whatever the defaults were)
+    if (-not [string]::IsNullOrWhiteSpace($loader.iwad)) {
+        $usediWad = $loader.iwad
+        $usedIwadName = "conf"
     }
 
     # Validate selected port/iwad + pak wad paths
@@ -536,15 +619,26 @@ if ($hasDoomMakeProject) {
     $fileList += $releasePath
     if ($dehackedPath -ne $null) { $fileList += $dehackedPath }
 
-    # Add defaults from doom-loader.conf ONLY if user didn't supply them
-    if (-not (Has-Arg -ArgsList $filteredArgs -Flag "-warp")) {
-        if (-not [string]::IsNullOrWhiteSpace($loader.warp)) {
-            $filteredArgs += @("-warp", $loader.warp)
-        }
+    if ($menuMode) {
+        # strip any CLI warp/skill if present
+        $filteredArgs = Remove-FlagWithValue -ArgsList $filteredArgs -Flag "-warp"
+        $filteredArgs = Remove-FlagWithValue -ArgsList $filteredArgs -Flag "-skill"
     }
-    if (-not (Has-Arg -ArgsList $filteredArgs -Flag "-skill")) {
-        if (-not [string]::IsNullOrWhiteSpace($loader.skill)) {
-            $filteredArgs += @("-skill", $loader.skill)
+    else {
+        # Add defaults from doom-loader.conf ONLY if user didn't supply them
+        if (-not (Has-Arg -ArgsList $filteredArgs -Flag "-warp")) {
+            if (-not [string]::IsNullOrWhiteSpace($loader.warp)) {
+                # NEW: allow "1 1" to become "-warp 1 1"
+                $warpParts = @($loader.warp -split '\s+' | Where-Object { $_ -ne "" })
+                if ($warpParts.Count -gt 0) {
+                    $filteredArgs += @("-warp") + $warpParts
+                }
+            }
+        }
+        if (-not (Has-Arg -ArgsList $filteredArgs -Flag "-skill")) {
+            if (-not [string]::IsNullOrWhiteSpace($loader.skill)) {
+                $filteredArgs += @("-skill", $loader.skill)
+            }
         }
     }
 
