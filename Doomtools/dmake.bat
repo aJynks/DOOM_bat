@@ -7,11 +7,19 @@ rem ----------------------------------------------------------------------------
 rem Wrapper for doommake with optional post-run of doom.bat
 rem
 rem Behaviour:
+rem   - If ANY argument is "update":
+rem       Run doomtools --update && doomtools --update-cleanup && doomtools --update-shell
+rem       Ignore all other arguments
 rem   - Arguments before "--" are passed to doommake
 rem   - If "--" is present, doom.bat is run after doommake
 rem   - Arguments after "--" are passed to doom.bat
-rem   - If doommake returns a non-zero errorlevel, doom.bat will NOT run
+rem   - If doommake returns non-zero, doom.bat will NOT run
 rem ==============================================================================
+
+rem ---- Scan ALL arguments for "update" ------------------------------------------
+for %%A in (%*) do (
+    if /I "%%~A"=="update" goto do_update
+)
 
 rem ---- Help triggers ------------------------------------------------------------
 if "%~1"=="" goto main
@@ -58,6 +66,17 @@ if defined SEEN_DASHDASH (
 
 exit /b 0
 
+:do_update
+rem ---- DoomTools update chain ---------------------------------------------------
+call doomtools --update
+if errorlevel 1 exit /b %ERRORLEVEL%
+
+call doomtools --update-cleanup
+if errorlevel 1 exit /b %ERRORLEVEL%
+
+call doomtools --update-shell
+exit /b %ERRORLEVEL%
+
 :help
 echo.
 echo ==============================================================================
@@ -66,27 +85,20 @@ echo  doommake wrapper with optional doom.bat launch
 echo ==============================================================================
 echo.
 echo DESCRIPTION
-echo   dmake is a small command-line wrapper for doommake.
+echo   dmake forwards arguments to doommake.
 echo.
-echo   It forwards all arguments to doommake as normal.
-echo   If a literal "--" is present, doom.bat is run AFTER doommake
-echo   and receives any remaining arguments.
+echo   If "--" is present, doom.bat is run AFTER doommake
+echo   and receives the remaining arguments.
+echo.
+echo   SPECIAL BEHAVIOUR:
+echo     If ANY argument is "update", ALL other arguments are ignored and:
+echo       doomtools --update
+echo       doomtools --update-cleanup
+echo       doomtools --update-shell
 echo.
 echo USAGE
 echo   dmake [doommake_args...] [-- [doom_args...]]
+echo   dmake update
+echo   dmake fresh update -- -warp 5
 echo.
-echo EXAMPLES
-echo   dmake fresh
-echo       Runs: doommake fresh
-echo.
-echo   dmake fresh --
-echo       Runs: doommake fresh
-echo       Then: doom.bat
-echo.
-echo   dmake fresh -- -warp 5 -skill 5 -nosound
-echo       Runs: doommake fresh
-echo       Then: doom.bat -warp 5 -skill 5 -nosound
-echo.
-echo   dmake -- helion
-echo       Runs: doommake
-echo       Then: doom.bat helion
+exit /b 0
