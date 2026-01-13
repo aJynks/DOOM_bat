@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Service
-ServiceTypes=Krita/PythonPlugin
-X-KDE-Library=doom_palette_tools
-X-Krita-Manual=manual.html
-Name=Doom Palette Tools
-Comment=SLADE / Doom palette conversion scripts
