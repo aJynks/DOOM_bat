@@ -1,78 +1,322 @@
+# DOOM Runner (PowerShell + Batch)
+
+G’day — aJynks here.
+
+This is a command-line DOOM launcher I wrote for my own modding and testing workflow. I got sick of typing long engine commands every time I wanted to test a WAD, so I made this thing to do the thinking for me.
+
+It started as a simple batch file for a couple of source ports. Then I thought, *bugger it*, and made it smarter. Now it supports multiple ports, multiple IWADs, preset mod packs (“paks”), folder auto-detection, and DoomMake projects.
+
+This repo contains two files:
+
+- **doom_runDoomWad.ps1** — the actual brains of the operation  
+- **doom.bat** — a tiny wrapper so you can just type `doom` anywhere  
+
+Both of these files **must** be placed in a folder that is in your system PATH.
+
 =============================================================================
-RUN Doom
 
-G’day — aJynks here...
+## 1) What This Is
 
-This is a batch file I made to help me quickly test my own WADs for my hobby project in various engines. I originally intended it to work only with kexDoom, DSDA-Doom, and GZDoom. But while I was writing it I thought, bugger it, and made it support several other engines too.
+This is a **smart command-line launcher for DOOM**.
 
-This batch file calls a PowerShell script. I almost got it working entirely in batch, but it was just easier to handle in PowerShell. It should just work, but you may need to enable PowerShell script execution outside of PowerShell (see Execution Policies).
+Instead of typing stuff like:
+
+dsda-doom.exe -iwad D:\IWADS\doom2.wad -file mymap.wad -warp 2 -skill 4
+
+You type:
+
+doom dsda doom2 -warp 2 -skill 4
+
+Or even just:
+
+doom
+
+And it figures it out.
+
+It’s designed for people who:
+- Use multiple source ports
+- Test WADs constantly
+- Work with DoomMake projects
+- Want sane defaults
+- Want speed
+- Don’t want to retype nonsense all day
 
 =============================================================================
-What exactly does this batch file do?
 
-It launches Doom and allows you to select a source port via command line.
-It also automatically loads a WAD file if it is the only .wad file in the current directory.
+## 2) How It Works
+
+When you run `doom`, the script does the following:
+
+### Argument Parsing
+
+Everything you type is scanned and categorized as:
+
+- **Source port keywords** (e.g. `dsda`, `woof`, `nyan`)
+- **IWAD keywords** (e.g. `doom2`, `tnt`, `plutonia`)
+- **Pak keywords** (preset WAD bundles)
+- **Everything else** (passed straight to the engine)
+
+You don’t have to care about this. Just type what makes sense.
+
+---
+
+### Mode Detection
+
+There are two operating modes.
+
+#### Normal Folder Mode
+
+Used when the current directory is **not** a DoomMake project.
+
+Folder contents determine behavior:
+
+- 0 WADs → runs port + IWAD only
+- 1 WAD → auto-loads it
+- 2+ WADs → shows an ASCII picker
+
+Load order:
+
+1) Pak WADs (if any)  
+2) Selected or auto-detected WAD  
+
+---
+
+#### DoomMake Project Mode
+
+Activated when these files exist:
+
+- doommake.properties  
+- doommake.script  
+- doommake.project.properties  
+
+In this mode:
+
+- The project name is read automatically
+- doom-loader.conf is created if missing
+- The script loads:
+  - ./build/<project>.wad (required)
+  - ./build/dehacked.wad (optional)
+- Default warp and skill values come from the config
+- CLI arguments override defaults
+
+Special token:
+
+menu
+
+If this appears anywhere (DoomMake mode only), all warp/skill injection is disabled.
+
+---
+
+### Final Command
+
+Eventually, the script builds and runs a real engine command that looks like:
+
+<port.exe> -iwad <iwad.wad> -file <pak wads> <selected wad> <your options>
+
+You never need to type that yourself.
 
 =============================================================================
-How to use this batch file
 
-This batch file is designed to be placed somewhere in your system’s environment path, so you can run it from anywhere in the command line.
+## 3) How To Install
 
-Usage:
-  doom [SourcePort] [IWAD] [other arguments...]
+### Step 1: Put the Files Somewhere Permanent
 
-Parameters:
-- SourcePortName : e.g. cherry to launch Cherry Doom
-- IWADName       : e.g. tnt or doom2 to specify which IWAD to use
-- Additional arguments : any valid arguments accepted by the source port
-                         (e.g. -file, -warp, -skill, -nomonsters, etc.)
+Example:
+
+C:\Tools\DoomRunner\
+  doom.bat  
+  doom_runDoomWad.ps1  
+
+---
+
+### Step 2: Add This Folder to PATH (REQUIRED)
+
+This allows you to type `doom` from any directory.
+
+Windows 10 / 11:
+
+1. Start → Search: Environment Variables  
+2. Open "Edit the system environment variables"  
+3. Click "Environment Variables"  
+4. Under User variables, select "Path" → Edit  
+5. Click New  
+6. Add the folder path (e.g. C:\Tools\DoomRunner\)  
+7. Click OK on all dialogs  
+8. Open a new terminal  
+
+Verify:
+
+where doom
+
+---
+
+### Step 3: Configure the Script
+
+Open **doom_runDoomWad.ps1** and edit the blocks at the top.
+
+#### Source Ports
+
+Format:
+
+"keyword" = "full path to exe"
+
+Example:
+
+"dsda" = "D:\Ports\dsda-doom.exe"
+
+---
+
+#### IWADs
+
+Format:
+
+"keyword" = "full path to wad"
+
+Example:
+
+"doom2" = "D:\IWADS\doom2.wad"
+
+---
+
+#### Pak Presets
+
+Pak presets expand into multiple WADs that are always loaded first.
+
+Format:
+
+"pakname" = @( "path1", "path2", ... )
+
+Example:
+
+"pak1" = @(
+  "D:\Mods\hud.wad",
+  "D:\Mods\statusbar.wad"
+)
+
+---
+
+#### Defaults
+
+You can set default source port and IWAD near the top of the script. These are used when you just type:
+
+doom
+
+=============================================================================
+
+## 4) Commands and What They Do
+
+### Basic Syntax
+
+doom [PORT] [IWAD] [PAK...] [OPTIONS...]
+
+---
+
+### Source Port Selection
+
+doom dsda  
+doom woof  
+doom nyan  
+
+Selects which engine to use.
+
+---
+
+### IWAD Selection
+
+doom doom2  
+doom tnt  
+doom plutonia  
+
+Selects which base game to use.
+
+---
+
+### Pak Presets
+
+doom pak1  
+doom dsda doom2 pak1  
+
+Loads predefined WAD bundles before everything else.
+
+---
+
+### Folder Auto-Detection
+
+doom  
+
+If there’s exactly one WAD in the folder, it loads it.  
+If there’s more than one, it asks which one.  
+If there are none, it just launches the IWAD.
+
+---
+
+### Passing Through Engine Arguments
+
+Anything not recognized as a keyword is passed directly to the source port.
 
 Examples:
-  doom
-    Loads Doom with the default source port and IWAD.
-    If there is exactly one WAD file in the current directory, it will be auto-loaded.
 
-  doom tnt -warp 1 -skill 4
-    Loads the IWAD TNT.WAD using the default source port, and warps to map 1 on skill level 4.
+doom dsda doom2 -warp 2 -skill 4  
+doom woof doom2 -record demo.lmp  
+doom -complevel 9  
 
-  doom helion -warp 1 -skill 4
-    Uses Helion as the source port, default IWAD, and warps to map 1, skill level 4.
+---
 
-  doom crispy doom
-    Launches Crispy Doom with doom.wad.
-    If there is only one WAD in the directory, it will be auto-loaded.
+### DoomMake Mode
 
-Note:
-  It will only auto-load a .wad file if it is the ONLY one in the directory
-  where the script is executed.
-  If more than one .wad file is present, you must manually specify it using
-  -file filename.wad (no path required).
+doom  
 
-=============================================================================
-How to set it up
+Runs the project using doom-loader.conf.
 
-1. Place both the .bat and .ps1 files in a directory that is included in your system’s PATH.
-2. Open doom_runDoomWad.ps1 in a text editor.
-3. Edit the $sourcePort_exes and $iwad_paths variables to match the locations of your engines and IWADs.
-   The keys you assign (e.g., "dsda", "crispy", "gz") become the commands you type in the doom call.
-4. Set your default source port by changing:
-     $defaultPort = $sourcePort_exes["dsda"]
-   to something like:
-     $defaultPort = $sourcePort_exes["kex"]
+doom menu  
 
-=============================================================================
-How to set Defaults
+Disables warp/skill injection.
 
-Edit the "Default values" section inside doom_runDoomWad.ps1.
+---
 
-To use KEX as your default source port:
-  $defaultPort = $sourcePort_exes["kex"]
+### Help
 
-Just replace "kex" with the name of the source port you want as default.
+doom --help  
+doom -h  
+doom /?  
 
 =============================================================================
 
-That’s it!
+## Troubleshooting
 
-Have fun and SLAUGHTER DEMONS
--- aJynks
+If `doom` is not found:
+- The folder is not in PATH
+- Open a new terminal
+
+If a port or IWAD fails:
+- Check paths in doom_runDoomWad.ps1
+
+If a pak fails:
+- Ensure all WAD paths exist
+- Pak arrays must not be empty
+
+=============================================================================
+
+## License
+
+This project is released into the **public domain** under the **Unlicense**.
+
+You can:
+- Use it
+- Copy it
+- Modify it
+- Break it
+- Fix it
+- Rewrite it
+- Sell it
+- Bundle it
+- Strip my name off it
+- Claim you wrote it (I won’t cry)
+
+No permission required. No attribution required. No warranty provided.
+
+Do whatever you want with it.
+
+Have fun and SLAUGHTER DEMONS.
+
+— aJynks
