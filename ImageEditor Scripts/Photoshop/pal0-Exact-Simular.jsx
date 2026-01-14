@@ -12,7 +12,7 @@
  *   - Uses a weighted RGB distance (luma-weighted) so SIM_MAX_DIST can be fractional.
  *   - Similar clustering is TRANSITIVE (union-find). With higher thresholds, ramps can chain together.
  *
- *  IMPORTANT: No ColorSamplers (avoids “Make is not currently available”).
+ *  IMPORTANT: No ColorSamplers (avoids "Make is not currently available").
  */
 
 #target photoshop
@@ -24,10 +24,28 @@ app.bringToFront();
         return;
     }
 
-    // -------------------- USER TUNABLES --------------------
-    // Perceptual-ish distance threshold (fractional). Try 3.6–4.2 for Doom palettes.
-    var SIM_MAX_DIST = 1.1;
+    // -------------------- ASK USER FOR THRESHOLD --------------------
+    var defaultThreshold = "1.1";
+    var userInput = prompt(
+        "Enter similarity threshold:\n\n" +
+        "Lower values (1.1) = stricter matching\n" +
+        "Higher values (3.6-4.2) = finds color ramps\n\n" +
+        "Threshold:",
+        defaultThreshold
+    );
+    
+    if (userInput === null) {
+        // User clicked Cancel
+        return;
+    }
+    
+    var SIM_MAX_DIST = parseFloat(userInput);
+    if (isNaN(SIM_MAX_DIST) || SIM_MAX_DIST < 0) {
+        alert("Invalid threshold value. Using default: 1.1");
+        SIM_MAX_DIST = 1.1;
+    }
 
+    // -------------------- USER TUNABLES --------------------
     // If true, SIMILAR excludes exact duplicates (so IDENTICAL handles those).
     var SIM_EXCLUDE_EXACT = true;
 

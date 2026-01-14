@@ -27,6 +27,9 @@ class DoomPaletteToolsExtension(Extension):
         from .strip2slade_1x1 import main as strip2slade_1x1
         from .strip2slade_8x8 import main as strip2slade_8x8
 
+        # NEW: Exact + Similar grouping tool
+        from .pal0_exact_simular import main as pal0_exact_simular
+
         def add_item(label, fn):
             act = QAction(label, window.qwindow())
             act.triggered.connect(fn)
@@ -41,5 +44,9 @@ class DoomPaletteToolsExtension(Extension):
         add_item("SLADE → Strip (8x8)", slade2strip_8x8)
         add_item("Strip → SLADE (1x1)", strip2slade_1x1)
         add_item("Strip → SLADE (8x8)", strip2slade_8x8)
+
+        menu.addSeparator()
+
+        add_item("Palette: IDENTICAL + SIMILAR Groups (pal0)", pal0_exact_simular)
 
 Krita.instance().addExtension(DoomPaletteToolsExtension(Krita.instance()))
