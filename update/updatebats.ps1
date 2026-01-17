@@ -17,8 +17,9 @@ $fileTable = @{
         "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/DrawMapsFromWAD/drawmaps.py"
     )
     "playpal" = @(
-        "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/playpal-colorMap/genColourMap.py",
-        "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/playpal-colorMap/genPlayPalPNG.py"
+        "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/playpal-colorMap/playpal_genColourMap.py",
+        "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/playpal-colorMap/playpal_genPlayPalPNG.py",
+		"https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/playpal-colorMap/playpal_playpalpng2Slade.py"
     )
     "doomcube" = @(
         "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/png2Cube/png2cube.py",
@@ -56,6 +57,7 @@ function Show-Help {
     Write-Host "USAGE:" -ForegroundColor Yellow
     Write-Host "  updateBats [filename]           Download a specific file or group"
     Write-Host "  updateBats all [-a, --all]      Download all files in the file table"
+    Write-Host "  updateBats list [-l, --list]    List all available files and groups"
     Write-Host "  updateBats help                 Show this help message"
     Write-Host "  updateBats -f [--listFiles]     List all available files"
     Write-Host "  updateBats -g [--listGroups]    List all available groups"
@@ -64,6 +66,7 @@ function Show-Help {
     Write-Host "  updateBats doommake-tweak       Download the doommake-tweak file(s)"
     Write-Host "  updateBats doomtools            Download all files in the doomtools group"
     Write-Host "  updateBats all                  Download everything"
+    Write-Host "  updateBats list                 Show all available files and groups"
     Write-Host ""
     Write-Host "NOTES:" -ForegroundColor Yellow
     Write-Host "  - Files are downloaded to the current directory"
@@ -156,6 +159,39 @@ if ([string]::IsNullOrWhiteSpace($Target)) {
 # Handle help
 if ($Target -eq "help" -or $Target -eq "-h" -or $Target -eq "--help") {
     Show-Help
+    exit 0
+}
+
+# Handle list (shows both files and groups)
+if ($Target -eq "list" -or $Target -eq "-l" -or $Target -eq "--list") {
+    Write-Host ""
+    Write-Host "Available files:" -ForegroundColor Cyan
+    Write-Host ""
+    foreach ($key in $fileTable.Keys | Sort-Object) {
+        $urls = $fileTable[$key]
+        if ($urls -is [string]) {
+            $urls = @($urls)
+        }
+        $fileCount = $urls.Count
+        if ($fileCount -eq 1) {
+            Write-Host "  $key" -ForegroundColor Yellow
+        } else {
+            Write-Host "  $key ($fileCount files)" -ForegroundColor Yellow
+        }
+    }
+    Write-Host ""
+    Write-Host "Available groups:" -ForegroundColor Cyan
+    Write-Host ""
+    if ($groupTable.Count -eq 0) {
+        Write-Host "  (No groups defined)" -ForegroundColor Gray
+    } else {
+        foreach ($key in $groupTable.Keys | Sort-Object) {
+            $fileList = $groupTable[$key] -join ", "
+            Write-Host "  $key" -ForegroundColor Yellow
+            Write-Host "    Contains: $fileList" -ForegroundColor Gray
+        }
+    }
+    Write-Host ""
     exit 0
 }
 
