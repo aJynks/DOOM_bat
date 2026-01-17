@@ -1,52 +1,115 @@
 # ============================================================================
 # FILE DOWNLOAD TABLE - Edit this section to add/remove files
 # ============================================================================
-# Each entry can have a single URL (as a string) or multiple URLs (as an array)
+# Each entry can have:
+#   - A single URL (as a string)
+#   - Multiple URLs (as an array)
+#   - A GitHub directory URL (uses GitHub API to fetch all files recursively)
+#     Format: https://github.com/owner/repo/tree/branch/path
 $fileTable = @{
-    "doommake-tweak" = @(
-        "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Doomtools/doommake-tweak.ps1",
-        "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Doomtools/doommake-tweak.bat",
-        "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Doomtools/dmake.bat"
-    )
-    "doomrun" = @(
-        "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/doomRUN/doom_runDoomWad.ps1",
-        "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/doomRUN/doom.bat"
-    )
-    "drawmaps" = @(
-        "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/DrawMapsFromWAD/drawmaps.bat",
-        "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/DrawMapsFromWAD/drawmaps.py"
-    )
+<#
     "playpal" = @(
         "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/playpal-colorMap/playpal_genColourMap.py",
         "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/playpal-colorMap/playpal_genPlayPalPNG.py",
-		"https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/playpal-colorMap/playpal_playpalpng2Slade.py"
+        "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/playpal-colorMap/playpal_playpalpng2Slade.py",
+        "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/playpal-colorMap/playpal_expandPal0.py",
+        "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/playpal-colorMap/playpal.bat"
     )
-    "doomcube" = @(
-        "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/png2Cube/png2cube.py",
-        "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/ImageEditor%20Scripts/DoomCube/doomCube.bat"
-    )
+#>
+    "doomtools" = "https://github.com/aJynks/DOOM_bat/tree/main/Doomtools"
+    "doomrun" = "https://github.com/aJynks/DOOM_bat/tree/main/doomRUN"
+    "doomcube" = "https://github.com/aJynks/DOOM_bat/tree/main/ImageEditor%20Scripts/DoomCube"
+    "krita" = "https://github.com/aJynks/DOOM_bat/tree/main/ImageEditor%20Scripts/Kirta"
+    "photoshop" = "https://github.com/aJynks/DOOM_bat/tree/main/ImageEditor%20Scripts/Photoshop"
+    "drawmapsfromwad" = "https://github.com/aJynks/DOOM_bat/tree/main/Python/DrawMapsFromWAD"
+    "playpal-ColorMaps" = "https://github.com/aJynks/DOOM_bat/tree/main/Python/playpal-colorMap"
+    "png2cube" = "https://github.com/aJynks/DOOM_bat/tree/main/Python/png2Cube"
 }
 
 # ============================================================================
 # GROUP TABLE - Define groups of files to download together
 # ============================================================================
-# Each group contains an array of file names from $fileTable
-# Make sure group names are unique and don't conflict with file names
-# Example:
-# $groupTable = @{
-#     "doomtools" = @("doommake-tweak", "dmake.bat")
-# }
-$groupTable = @{}
+$groupTable = @{
+    "doom-scripts" = @("doomtools", "doomrun", "drawmapsfromwad")
+    "image-tools" = @("doomcube", "playpal-ColorMaps", "png2cube")
+    "gfxapp-plugins" = @("krita", "photoshop")
+    "python-tools" = @("drawmapsfromwad", "playpal-ColorMaps", "png2cube")
+    "essentials" = @("doomtools", "doomrun")
+}
 
 # ============================================================================
-# SCRIPT LOGIC - Don't edit below unless you know what you're doing
+# SCRIPT LOGIC - Do not edit below unless you know what you are doing
 # ============================================================================
+
+# Load System.Web for URL decoding
+Add-Type -AssemblyName System.Web
 
 # Get the target parameter
 $Target = $args[0]
 
 # Get current directory where script was called from
 $downloadPath = Get-Location
+
+# Function to fetch all files from a GitHub directory recursively
+function Get-GitHubDirectoryFiles {
+    param(
+        [string]$GitHubUrl
+    )
+    
+    # Parse GitHub URL: https://github.com/owner/repo/tree/branch/path
+    if ($GitHubUrl -match 'github\.com/([^/]+)/([^/]+)/tree/([^/]+)/(.+)') {
+        $owner = $matches[1]
+        $repo = $matches[2]
+        $branch = $matches[3]
+        $path = [System.Web.HttpUtility]::UrlDecode($matches[4])
+    } elseif ($GitHubUrl -match 'github\.com/([^/]+)/([^/]+)/tree/([^/]+)/?$') {
+        $owner = $matches[1]
+        $repo = $matches[2]
+        $branch = $matches[3]
+        $path = ""
+    } else {
+        Write-Host "Error: Invalid GitHub URL format. Expected: https://github.com/owner/repo/tree/branch/path" -ForegroundColor Red
+        return @()
+    }
+    
+    Write-Host "Looking for files in: $path" -ForegroundColor Gray
+    
+    # Use GitHub API to get the tree recursively
+    $apiUrl = "https://api.github.com/repos/$owner/$repo/git/trees/$branch`?recursive=1"
+    
+    try {
+        Write-Host "Fetching file list from GitHub API..." -ForegroundColor Gray
+        $response = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
+        
+        # Filter files that start with the specified path and exclude README files
+        $files = $response.tree | Where-Object { 
+            $_.type -eq "blob" -and 
+            ($path -eq "" -or $_.path -like "$path/*" -or $_.path -eq $path) -and
+            $_.name -notlike "readme.md" -and
+            $_.name -notlike "README.md" -and
+            $_.name -notlike "README.MD" -and
+            $_.name -notlike "Readme.md"
+        }
+        
+        Write-Host "Path filter: $path" -ForegroundColor Gray
+        Write-Host "Total files in repo: $($response.tree.Count)" -ForegroundColor Gray
+        Write-Host "Filtered to: $($files.Count) files" -ForegroundColor Gray
+        
+        # Convert to raw GitHub URLs
+        $rawUrls = @()
+        foreach ($file in $files) {
+            $rawUrl = "https://raw.githubusercontent.com/$owner/$repo/$branch/$($file.path)"
+            $rawUrls += $rawUrl
+        }
+        
+        Write-Host "Found $($rawUrls.Count) files in directory" -ForegroundColor Gray
+        return $rawUrls
+    }
+    catch {
+        Write-Host "Error fetching from GitHub API: $($_.Exception.Message)" -ForegroundColor Red
+        return @()
+    }
+}
 
 # Function to display help
 function Show-Help {
@@ -63,15 +126,18 @@ function Show-Help {
     Write-Host "  updateBats -g [--listGroups]    List all available groups"
     Write-Host ""
     Write-Host "EXAMPLES:" -ForegroundColor Yellow
-    Write-Host "  updateBats doommake-tweak       Download the doommake-tweak file(s)"
-    Write-Host "  updateBats doomtools            Download all files in the doomtools group"
+    Write-Host "  updateBats doomtools            Download all files from doomtools directory"
+    Write-Host "  updateBats doom-scripts         Download the doom-scripts group"
     Write-Host "  updateBats all                  Download everything"
     Write-Host "  updateBats list                 Show all available files and groups"
     Write-Host ""
     Write-Host "NOTES:" -ForegroundColor Yellow
     Write-Host "  - Files are downloaded to the current directory"
+    Write-Host "  - Subdirectories are created automatically from URL paths"
+    Write-Host "  - GitHub directory URLs fetch all files recursively via API"
     Write-Host "  - Existing files will be overwritten"
     Write-Host "  - Groups are checked before individual files"
+    Write-Host "  - README files are automatically excluded"
     Write-Host ""
 }
 
@@ -83,7 +149,33 @@ function Download-File {
     
     # Extract actual filename from URL
     $actualFileName = Split-Path $Url -Leaf
-    $destinationPath = Join-Path $downloadPath $actualFileName
+    
+    # Try to extract subdirectory structure from URL
+    # Pattern: look for everything after the branch name
+    $pattern = 'raw\.githubusercontent\.com/[^/]+/[^/]+/[^/]+/(.+)$'
+    if ($Url -match $pattern) {
+        $fullPath = $matches[1]
+        $subdirPath = Split-Path $fullPath -Parent
+        
+        # URL-decode directory names (handles %20 spaces, etc.)
+        $subdirPath = [System.Web.HttpUtility]::UrlDecode($subdirPath)
+        
+        if (-not [string]::IsNullOrWhiteSpace($subdirPath)) {
+            $fullDirectory = Join-Path $downloadPath $subdirPath
+            
+            # Create directory if it does not exist
+            if (-not (Test-Path $fullDirectory)) {
+                Write-Host "Creating directory: $subdirPath" -ForegroundColor Gray
+                New-Item -ItemType Directory -Path $fullDirectory -Force | Out-Null
+            }
+            
+            $destinationPath = Join-Path $fullDirectory $actualFileName
+        } else {
+            $destinationPath = Join-Path $downloadPath $actualFileName
+        }
+    } else {
+        $destinationPath = Join-Path $downloadPath $actualFileName
+    }
     
     try {
         # Check if file already exists BEFORE downloading
@@ -120,6 +212,21 @@ function Download-Entry {
         [string]$EntryName,
         $Urls
     )
+    
+    # Check if this is a GitHub directory URL and fetch files if so
+    $githubPattern = 'github\.com/.+/tree/'
+    if ($Urls -is [string] -and $Urls -match $githubPattern) {
+        Write-Host "Detected GitHub directory URL, fetching file list..." -ForegroundColor Cyan
+        $Urls = Get-GitHubDirectoryFiles -GitHubUrl $Urls
+        if ($Urls.Count -eq 0) {
+            Write-Host "No files found or error occurred" -ForegroundColor Red
+            return @{
+                Success = 0
+                Failed = 1
+                Overwritten = 0
+            }
+        }
+    }
     
     # Convert single URL to array for consistent handling
     if ($Urls -is [string]) {
@@ -240,7 +347,7 @@ if ($Target -eq "--all" -or $Target -eq "-a" -or $Target -eq "all") {
     $overwriteCount = 0
     
     foreach ($entry in $fileTable.GetEnumerator()) {
-        Write-Host "Processing '$($entry.Key)'..." -ForegroundColor Yellow
+        Write-Host "Processing $($entry.Key)..." -ForegroundColor Yellow
         $result = Download-Entry -EntryName $entry.Key -Urls $entry.Value
         $successCount += $result.Success
         $failCount += $result.Failed
@@ -262,7 +369,7 @@ if ($Target -eq "--all" -or $Target -eq "-a" -or $Target -eq "all") {
 
 # Check if target is a group first
 if ($groupTable.ContainsKey($Target)) {
-    Write-Host "Downloading group '$Target'..." -ForegroundColor Yellow
+    Write-Host "Downloading group $Target..." -ForegroundColor Yellow
     Write-Host ""
     
     $successCount = 0
@@ -271,11 +378,11 @@ if ($groupTable.ContainsKey($Target)) {
     
     foreach ($fileName in $groupTable[$Target]) {
         if (-not $fileTable.ContainsKey($fileName)) {
-            Write-Host "Warning: '$fileName' in group '$Target' not found in file table, skipping..." -ForegroundColor Yellow
+            Write-Host "Warning: $fileName in group $Target not found in file table, skipping..." -ForegroundColor Yellow
             continue
         }
         
-        Write-Host "Processing '$fileName'..." -ForegroundColor Yellow
+        Write-Host "Processing $fileName..." -ForegroundColor Yellow
         $result = Download-Entry -EntryName $fileName -Urls $fileTable[$fileName]
         $successCount += $result.Success
         $failCount += $result.Failed
@@ -284,7 +391,7 @@ if ($groupTable.ContainsKey($Target)) {
     }
     
     Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "Download Summary for group '$Target':" -ForegroundColor Cyan
+    Write-Host "Download Summary for group $Target" -ForegroundColor Cyan
     Write-Host "  Successful: $successCount" -ForegroundColor Green
     if ($overwriteCount -gt 0) {
         Write-Host "  Overwritten: $overwriteCount" -ForegroundColor Yellow
@@ -302,7 +409,7 @@ if ($fileTable.ContainsKey($Target)) {
     $totalFiles = $result.Success + $result.Failed
     if ($totalFiles -gt 1) {
         Write-Host ""
-        Write-Host "Summary for '$Target':" -ForegroundColor Cyan
+        Write-Host "Summary for $Target" -ForegroundColor Cyan
         Write-Host "  Successful: $($result.Success)" -ForegroundColor Green
         if ($result.Overwritten -gt 0) {
             Write-Host "  Overwritten: $($result.Overwritten)" -ForegroundColor Yellow
@@ -314,6 +421,6 @@ if ($fileTable.ContainsKey($Target)) {
 }
 
 # Not found in either table
-Write-Host "Error: '$Target' not found in file table or group table" -ForegroundColor Red
+Write-Host "Error: $Target not found in file table or group table" -ForegroundColor Red
 Show-Help
 exit 1
