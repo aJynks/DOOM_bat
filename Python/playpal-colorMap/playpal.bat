@@ -5,6 +5,7 @@ set "SCRIPT_P=%~dp0playpal_genPlayPalPNG.py"
 set "SCRIPT_C=%~dp0playpal_genColourMap.py"
 set "SCRIPT_S=%~dp0playpal_playpalpng2Slade.py"
 set "SCRIPT_B=%~dp0playpal_expandPal0.py"
+set "SCRIPT_BC=%~dp0playpal_genColourMap_NoLighting.py"
 
 if "%~1"=="" goto :help
 
@@ -17,6 +18,8 @@ if /I "%~1"=="-s" set "MODE=S"
 if /I "%~1"=="--slade" set "MODE=S"
 if /I "%~1"=="-b" set "MODE=B"
 if /I "%~1"=="--blank" set "MODE=B"
+if /I "%~1"=="-bc" set "MODE=BC"
+if /I "%~1"=="--blankcolormap" set "MODE=BC"
 
 if not defined MODE goto :help
 
@@ -91,21 +94,29 @@ if /I "%MODE%"=="B" (
     exit /b %errorlevel%
 )
 
+if /I "%MODE%"=="BC" (
+    if %POS% LSS 2 goto :help_bc
+    py -3 "%SCRIPT_BC%" %FWDARGS%
+    exit /b %errorlevel%
+)
+
 goto :help
 
 :help
 echo.
 echo Usage:
-echo   playpal -p [--playpalpng] ^<input^> ^<output.png^> [--scale N]
-echo   playpal -c [--colourmap]  ^<input^> ^<output.png^>
-echo   playpal -s [--slade]      ^<strip.png^> [--cell N] [--outdir DIR]
-echo   playpal -b [--blank]      ^<input^> ^<output.png^> [--scale N]
+echo   playpal -p  [--playpalpng]     ^<input^> ^<output.png^> [--scale N]
+echo   playpal -c  [--colourmap]      ^<input^> ^<output.png^>
+echo   playpal -bc [--blankcolormap]  ^<input^> ^<output.png^>
+echo   playpal -s  [--slade]          ^<strip.png^> [--cell N] [--outdir DIR]
+echo   playpal -b  [--blank]          ^<input^> ^<output.png^> [--scale N]
 echo.
 echo Modes:
-echo   -p  Generate palette strip PNG (256xN) from input
-echo   -c  Generate colormap PNG from palette
-echo   -s  Convert strip PNG to SLADE-style grid PNGs
-echo   -b  Generate 256x14 PNG with palette 0 repeated 14 times
+echo   -p   Generate palette strip PNG (256xN) from palette file
+echo   -c   Generate standard colormap with 32 light levels + special rows
+echo   -bc  Generate colormap with NO lighting (all rows full brightness)
+echo   -s   Convert 256xN strip PNG to SLADE-style 16x16 grid PNGs
+echo   -b   Generate 256x14 PNG with palette 0 duplicated 14 times
 echo.
 exit /b 2
 
@@ -140,5 +151,12 @@ exit /b 2
 echo.
 echo Error: -b requires input and output.
 echo Usage: playpal -b ^<input^> ^<output.png^> [--scale N]
+echo.
+exit /b 2
+
+:help_bc
+echo.
+echo Error: -bc requires input and output.
+echo Usage: playpal -bc ^<input^> ^<output.png^>
 echo.
 exit /b 2

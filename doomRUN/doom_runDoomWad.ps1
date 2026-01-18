@@ -11,7 +11,7 @@ $sourcePort_exes = @{
     "kex"    = "d:\Games\Doom\_SourcePort\Kex-Doom\DOOM + DOOM II\doom_gog.exe"
     "nugget" = "d:\Games\Doom\_SourcePort\Nugget-Doom\nugget-doom.exe"
     "nyan"   = "d:\Games\Doom\_SourcePort\Nyan-Doom\nyan-doom.exe"
-    "retro"  = "d:\Games\Doom\_SourcePort\Retro-Doom\missing.exe"
+    "retro"  = ""
     "uz"     = "d:\Games\Doom\_SourcePort\uzDoom\uzdoom.exe"
     "woof"   = "d:\Games\Doom\_SourcePort\Woof-Doom\woof.exe"
 }
@@ -284,6 +284,26 @@ function Remove-FlagWithValue {
     }
 
     return ,$out
+}
+
+#-------------------------------------------------------------------------------------------------
+# KEX helper (append -skipmovies ONLY when using the 'kex' port keyword)
+
+function Ensure-KexSkipMovies {
+    param(
+        [string]$PortName,
+        [object[]]$ArgsList
+    )
+
+    if ($PortName -ne "kex") { return ,$ArgsList }
+
+    foreach ($a in $ArgsList) {
+        if ($null -ne $a -and $a.ToString().ToLowerInvariant() -eq "-skipmovies") {
+            return ,$ArgsList
+        }
+    }
+
+    return ,($ArgsList + @("-skipmovies"))
 }
 
 #-------------------------------------------------------------------------------------------------
@@ -642,6 +662,9 @@ if ($hasDoomMakeProject) {
         }
     }
 
+    # KEX-only: append -skipmovies at the END of the final command args
+    $filteredArgs = Ensure-KexSkipMovies -PortName $usedPortName -ArgsList $filteredArgs
+
     & $usedPort -iwad $usediWad -file @fileList @filteredArgs
     exit
 }
@@ -720,9 +743,16 @@ if ($pakWads.Count -gt 0 -or $null -ne $wadFullPath) {
     $fileList = @()
     if ($pakWads.Count -gt 0) { $fileList += $pakWads }
     if ($null -ne $wadFullPath) { $fileList += $wadFullPath }
+
+    # KEX-only: append -skipmovies at the END of the final command args
+    $filteredArgs = Ensure-KexSkipMovies -PortName $usedPortName -ArgsList $filteredArgs
+
     & $usedPort -iwad $usediWad -file @fileList @filteredArgs
 }
 else {
+    # KEX-only: append -skipmovies at the END of the final command args
+    $filteredArgs = Ensure-KexSkipMovies -PortName $usedPortName -ArgsList $filteredArgs
+
     & $usedPort -iwad $usediWad @filteredArgs
 }
 

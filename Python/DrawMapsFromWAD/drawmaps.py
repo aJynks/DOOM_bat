@@ -3,24 +3,34 @@
 Draw Doom maps to transparent PNGs with automap-ish line colours.
 
 Usage:
-  py drawmaps2.py source.wad pattern width PNG [layers]
+  py drawmaps.py source.wad [options]
 
-Pattern:
-  - Wildcards supported: * and ?
-    Examples: "MAP*", "E?M4"
-  - Exact map name supported (no * or ?)
-    Examples: "MAP01", "E1M1"
+Options:
+  -m, --map PATTERN       Map pattern (wildcards: * ?) or exact name
+                          Default: draws ALL maps in WAD
+  -s, --size WIDTH        Image width in pixels (default: 1024)
+  -t, --thickness N       Line thickness (default: 1)
+  -b, --background [COLOR] Background color: 'black' (default if flag used) 
+                          or hex code (#1ecbe1). Omit flag for transparent.
+                          Use: -b (black), -b #1ecbe1 (custom color)
+  --layers                Generate separate layer PNGs for each line type
+  -h, --help              Show this help message
 
 Examples:
-  py drawmaps2.py "Blood_Born_PT1_(RC5).wad" "MAP*" 1024 PNG
-  py drawmaps2.py "doom2.wad" "MAP01" 1024 PNG layers
+  py drawmaps.py doom2.wad
+  py drawmaps.py doom2.wad -m MAP01
+  py drawmaps.py doom2.wad -m "MAP*" -s 2048
+  py drawmaps.py doom2.wad -m "E?M4" -t 2 -b
+  py drawmaps.py doom2.wad -b #1ecbe1
+  py drawmaps.py doom2.wad -b
+  py drawmaps.py doom2.wad --layers
 
 Outputs:
-  MAP09_map.png               (all lines on transparent background)
-  MAP09_map_layer1.png        (Walls / one-sided only)   [if layers]
-  MAP09_map_layer2.png        (Two-sided only)           [if layers]
-  MAP09_map_layer3.png        (Secret only)              [if layers]
-  MAP09_map_layer4.png        (Special/Action only)      [if layers]
+  MAP09_map.png               (all lines)
+  MAP09_map_layer1.png        (Walls / one-sided only)   [if --layers]
+  MAP09_map_layer2.png        (Two-sided only)           [if --layers]
+  MAP09_map_layer3.png        (Secret only)              [if --layers]
+  MAP09_map_layer4.png        (Special/Action only)      [if --layers]
 """
 
 from omg import WAD, MapEditor
@@ -36,9 +46,6 @@ COL_TWO_SIDED = (190, 140, 90, 255)     # two-sided edges (often brown/tan)
 COL_SECRET    = (255, 255, 0, 255)      # secret lines (often yellow)
 COL_SPECIAL   = (0, 255, 0, 255)        # special/action lines (often green)
 COL_DEFAULT   = (255, 255, 255, 255)    # fallback (unused unless you expand rules)
-
-# Line thickness
-THICKNESS = 1
 
 
 def _linedef_flags(ld):
@@ -127,14 +134,48 @@ def _compute_scaled_editor(wad, name, width):
     return edit, xmin, ymin, xmax, ymax
 
 
-def drawmap(wad, name, width, save_layers=False):
+def parse_background_color(color_str):
+    """
+    Parse background color from string.
+    Returns (r, g, b, a) tuple.
+    Accepts:
+      - 'black' -> (0, 0, 0, 255)
+      - '#RRGGBB' hex code -> (r, g, b, 255)
+      - None/empty -> (0, 0, 0, 0) transparent
+    """
+    if not color_str:
+        return (0, 0, 0, 0)  # Transparent
+    
+    color_str = color_str.strip().lower()
+    
+    if color_str == "black":
+        return (0, 0, 0, 255)
+    
+    # Try to parse hex color
+    if color_str.startswith("#"):
+        color_str = color_str[1:]
+    
+    # Must be 6 hex digits
+    if len(color_str) != 6:
+        raise ValueError(f"Invalid hex color: must be #RRGGBB format (e.g., #1ecbe1)")
+    
+    try:
+        r = int(color_str[0:2], 16)
+        g = int(color_str[2:4], 16)
+        b = int(color_str[4:6], 16)
+        return (r, g, b, 255)
+    except ValueError:
+        raise ValueError(f"Invalid hex color: {color_str} (must be valid hex digits)")
+
+
+def drawmap(wad, name, width, save_layers=False, thickness=1, bg_color=(0, 0, 0, 0)):
     edit, xmin, ymin, xmax, ymax = _compute_scaled_editor(wad, name, width)
 
     w = (xmax - xmin) + 8
     h = (ymax - ymin) + 8
 
     # All-lines image
-    im_all = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    im_all = Image.new("RGBA", (w, h), bg_color)
     draw_all = ImageDraw.Draw(im_all)
 
     # Optional per-type layer images
@@ -142,7 +183,7 @@ def drawmap(wad, name, width, save_layers=False):
     layer_draws = None
     if save_layers:
         # 1..4 used; index 0 unused for convenience
-        layer_imgs = [None] + [Image.new("RGBA", (w, h), (0, 0, 0, 0)) for _ in range(4)]
+        layer_imgs = [None] + [Image.new("RGBA", (w, h), bg_color) for _ in range(4)]
         layer_draws = [None] + [ImageDraw.Draw(layer_imgs[i]) for i in range(1, 5)]
 
     # Draw one-sided first then two-sided last (helps mimic automap emphasis)
@@ -157,12 +198,12 @@ def drawmap(wad, name, width, save_layers=False):
         color = colour_for_linedef(ld)
 
         # Draw into combined map
-        draw_thick_line(draw_all, p1x, p1y, p2x, p2y, color, THICKNESS)
+        draw_thick_line(draw_all, p1x, p1y, p2x, p2y, color, thickness)
 
         # Draw into per-type layer map (if enabled)
         if save_layers:
             idx = layer_index_for_linedef(ld)
-            draw_thick_line(layer_draws[idx], p1x, p1y, p2x, p2y, color, THICKNESS)
+            draw_thick_line(layer_draws[idx], p1x, p1y, p2x, p2y, color, thickness)
 
     del draw_all
     im_all.save(f"{name}_map.png", "PNG")
@@ -172,50 +213,144 @@ def drawmap(wad, name, width, save_layers=False):
             layer_imgs[i].save(f"{name}_map_layer{i}.png", "PNG")
 
 
+def show_help():
+    print(__doc__)
+
+
 def main(argv):
-    # Accept both:
-    #   py drawmaps2.py wad pattern width PNG
-    #   py drawmaps2.py wad pattern width PNG layers
-    if len(argv) < 5:
-        print("\nUsage:\n  py drawmaps2.py source.wad pattern width PNG [layers]\n")
+    if len(argv) < 2:
+        show_help()
         return 1
 
+    # Check for help flag
+    if "-h" in argv or "--help" in argv:
+        show_help()
+        return 0
+
+    # First arg is always the WAD file
     source = argv[1]
-    pattern = argv[2]
-    width = int(argv[3])
-    fmt = argv[4].upper()
 
-    save_layers = (len(argv) >= 6 and argv[5].lower() == "layers")
+    # Initialize all variables
+    pattern = None
+    width = 1024
+    save_layers = False
+    thickness = 1
+    bg_color = (0, 0, 0, 0)  # Transparent by default
 
-    if fmt != "PNG":
-        print("Note: this script outputs PNG only (needs transparency). Ignoring format:", fmt)
+    # Parse arguments
+    i = 2
+    while i < len(argv):
+        arg = argv[i]
+
+        if arg in ("-m", "--map"):
+            if i + 1 >= len(argv):
+                print(f"Error: {arg} requires a value")
+                return 1
+            pattern = argv[i + 1]
+            i += 2
+        elif arg in ("-s", "--size"):
+            if i + 1 >= len(argv):
+                print(f"Error: {arg} requires a value")
+                return 1
+            try:
+                width = int(argv[i + 1])
+            except ValueError:
+                print(f"Error: {arg} requires a numeric value")
+                return 1
+            i += 2
+        elif arg in ("-t", "--thickness"):
+            if i + 1 >= len(argv):
+                print(f"Error: {arg} requires a value")
+                return 1
+            try:
+                thickness = int(argv[i + 1])
+            except ValueError:
+                print(f"Error: {arg} requires a numeric value")
+                return 1
+            i += 2
+        elif arg in ("-b", "--background"):
+            # Check if next arg exists and is not another flag
+            if i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+                # Color value provided
+                try:
+                    bg_color = parse_background_color(argv[i + 1])
+                except ValueError as e:
+                    print(f"Error: {e}")
+                    show_help()
+                    return 1
+                i += 2
+            else:
+                # No color value, default to black
+                bg_color = (0, 0, 0, 255)
+                i += 1
+        elif arg == "--layers":
+            save_layers = True
+            i += 1
+        else:
+            print(f"Error: Unknown option: {arg}")
+            show_help()
+            return 1
 
     print(f"Loading {source}...")
-    wad = WAD()
-    wad.from_file(source)
+    try:
+        wad = WAD()
+        wad.from_file(source)
+    except Exception as e:
+        print(f"Error loading WAD: {e}")
+        return 1
 
-    # Wildcard detection: if pattern has * or ?, treat as wildcard; otherwise exact map name.
-    is_wild = ("*" in pattern) or ("?" in pattern)
-
-    if is_wild:
-        map_names = list(wad.maps.find(pattern))
+    # Determine which maps to draw
+    if pattern is None:
+        # Draw ALL maps
+        map_names = list(wad.maps.keys())
+        print(f"Drawing all {len(map_names)} maps...")
     else:
-        # Exact mode: only draw that one map if it exists
-        # (still supports patterns like MAP01 without accidentally drawing extras)
-        if pattern in wad.maps:
-            map_names = [pattern]
+        # Convert pattern to uppercase for case-insensitive matching
+        pattern_upper = pattern.upper()
+
+        # Wildcard detection: if pattern has * or ?, treat as wildcard; otherwise exact map name.
+        is_wild = ("*" in pattern_upper) or ("?" in pattern_upper)
+
+        if is_wild:
+            # Use uppercase pattern for wildcard search
+            map_names = list(wad.maps.find(pattern_upper))
         else:
-            # As fallback, try find and then filter exact (some WADs store names oddly)
-            map_names = [m for m in wad.maps.find(pattern) if m == pattern]
+            # Exact mode: search case-insensitively
+            # First try direct lookup with uppercase
+            if pattern_upper in wad.maps:
+                map_names = [pattern_upper]
+            else:
+                # Fallback: check all map names case-insensitively
+                all_maps = list(wad.maps.keys())
+                map_names = [m for m in all_maps if m.upper() == pattern_upper]
 
-    if not map_names:
-        print(f"No maps matched: {pattern}")
-        return 2
+        if not map_names:
+            print(f"No maps matched: {pattern}")
+            print(f"Available maps in WAD: {', '.join(list(wad.maps.keys())[:10])}" + 
+                  (f" ... ({len(wad.maps)} total)" if len(wad.maps) > 10 else ""))
+            return 2
 
+    # Draw all matched maps
     for name in map_names:
-        print(f"Drawing {name}" + (" (with layers)" if save_layers else ""))
-        drawmap(wad, name, width, save_layers=save_layers)
+        status = f"Drawing {name} ({width}px"
+        if thickness > 1:
+            status += f", thickness={thickness}"
+        if bg_color != (0, 0, 0, 0):
+            if bg_color == (0, 0, 0, 255):
+                status += ", black bg"
+            else:
+                status += f", bg=#{bg_color[0]:02x}{bg_color[1]:02x}{bg_color[2]:02x}"
+        if save_layers:
+            status += ", with layers"
+        status += ")"
+        print(status)
+        
+        try:
+            drawmap(wad, name, width, save_layers=save_layers, thickness=thickness, bg_color=bg_color)
+        except Exception as e:
+            print(f"Error drawing {name}: {e}")
 
+    print(f"\nDone! Generated {len(map_names)} map(s)")
     return 0
 
 
