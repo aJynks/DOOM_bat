@@ -1,0 +1,102 @@
+/*=== STRING SUBSTITUTION CODES (MP / OBITUARIES) ======================
+  %s  = generic string insert (save slot name, map name, etc.)
+  %o  = victim (the player who died)
+  %k  = killer (the player who got the kill)
+  %g  = subject pronoun (he/she/they/it)
+  %h  = object pronoun (him/her/them/it)
+        (commonly used as %hself â†’ himself/herself/themself/itself)
+  %p  = possessive pronoun (his/her/their/its)
+  %%  = a literal percent sign
+======================================================================*/
+
+strings
+{
+  // GENERAL PROMPTS
+  D_DEVSTR "Development mode ON."
+  D_CDROM "CD-ROM Version: default.cfg from c:\doomdata"
+  QUITMSG "Are you sure you want to\nquit this great game?"
+  LOADNET "You can't do load while in a net game!\n\nPress a key."
+  QLOADNET "You can't quickload during a netgame!\n\nPress a key."
+  QSAVESPOT "You haven't picked a quicksave slot yet!\n\nPress a key."
+  SAVEDEAD "You can't save if you aren't playing!\n\nPress a key."
+  QSPROMPT "Quicksave over your game named\n\n'%s'?\n\nPress a key."
+  QLPROMPT "Do you want to quickload the game named\n\n'%s'?\n\nPress a key."
+  NEWGAME "You can't start a new game\nwhile in a network game.\n\nPress a key."
+  NIGHTMARE "Are you sure? This skill level\nisn't even remotely fair.\n\nPress Y or N."
+  SWSTRING "This is the shareware version of DOOM.\n\nYou need to order the entire trilogy.\n\nPress a key."
+  MSGOFF "Messages OFF"
+  MSGON "Messages ON"
+  NETEND "You can't end a netgame!\n\nPress a key."
+  ENDGAME "Are you sure you want to end the game?\n\nPress Y or N."
+  DETAILHI "High detail"
+  DETAILLO "Low detail"
+  GAMMALVL0 "Gamma correction OFF"
+  GAMMALVL1 "Gamma correction level 1"
+  GAMMALVL2 "Gamma correction level 2"
+  GAMMALVL3 "Gamma correction level 3"
+  GAMMALVL4 "Gamma correction level 4"
+  EMPTYSTRING "Empty slot"
+  GGSAVED "Game saved."
+  SAVEGAMENAME "DMSAVE"
+
+  // DOOM1 QUIT MESSAGES
+  QUITMSG1 "Please don't leave, there's more\ndemons to toast!"
+  QUITMSG2 "Let's beat it -- this is turning\ninto a bloodbath!"
+  QUITMSG3 "I wouldn't leave if I were you.\nDOS is much worse."
+  QUITMSG4 "You're trying to say you like DOS\nbetter than me, right?"
+  QUITMSG5 "Don't leave yet -- there's a\ndemon around that corner!"
+  QUITMSG6 "Ya know, next time you come in here\nI'm gonna toast ya."
+  QUITMSG7 "Go ahead and leave. See if I care."
+
+  // DOOM2 QUIT MESSAGES
+  QUITMSG8 "You want to quit?\nThen, thou hast lost an eighth!"
+  QUITMSG9 "Don't go now, there's a \ndimensional shambler waiting\nat the DOS prompt!"
+  QUITMSG10 "Get outta here and go back\nto your boring programs."
+  QUITMSG11 "If I were your boss, I'd \n deathmatch ya in a minute!"
+  QUITMSG12 "Look, bud. You leave now\nand you forfeit your body count!"
+  QUITMSG13 "Just leave. When you come\nback, I'll be waiting with a bat."
+  QUITMSG14 "You're lucky I don't smack\nyou for thinking about leaving."
+
+  // PICKUPS AND KEYS
+  GOTARMOR "Picked up the armor."
+  GOTMEGA "Picked up the MegaArmor!"
+  GOTHTHBONUS "Picked up a health bonus."
+  GOTARMBONUS "Picked up an armor bonus."
+  GOTSTIM "Picked up a stimpack."
+  GOTMEDINEED "Picked up a medikit that you REALLY need!"
+  GOTMEDIKIT "Picked up a medikit."
+  GOTSUPER "Supercharge!"
+  GOTBLUECARD "Picked up a blue keycard."
+  GOTYELWCARD "Picked up a yellow keycard."
+  GOTREDCARD "Picked up a red keycard."
+  GOTBLUESKUL "Picked up a blue skull key."
+  GOTYELWSKUL "Picked up a yellow skull key."
+  GOTREDSKULL "Picked up a red skull key."
+  GOTINVUL "Invulnerability!"
+  GOTBERSERK "Berserk!"
+  GOTINVIS "Partial Invisibility"
+  GOTSUIT "Radiation Shielding Suit"
+  GOTMAP "Computer Area Map"
+  GOTVISOR "Light Amplification Visor"
+  GOTMSPHERE "MegaSphere!"
+  GOTCLIP "Picked up a clip."
+  GOTCLIPBOX "Picked up a box of bullets."
+  GOTROCKET "Picked up a rocket."
+  GOTROCKBOX "Picked up a box of rockets."
+  GOTCELL "Picked up an energy cell."
+  GOTCELLBOX "Picked up an energy cell pack."
+  GOTSHELLS "Picked up 4 shotgun shells."
+  GOTSHELLBOX "Picked up a box of shotgun shells."
+  GOTBACKPACK "Picked up a backpack full of ammo!"
+  GOTBFG9000 "You got the BFG9000! Oh, yes."
+  GOTCHAINGUN "You got the chaingun!"
+  GOTCHAINSAW "A chainsaw!  Find some meat!"
+  GOTLAUNCHER "You got the rocket launcher!"
+  GOTPLASMA "You got the plasma gun!"
+  GOTSHOTGUN "You got the shotgun!"
+  GOTSHOTGUN2 "You got the super shotgun!"
+
+  // OBITUARIES (SPELLING FIXED)
+  OB_UNDEAD "%o couldn't evade a revenant's fireball."
+  OB_SHOTGUY "%o was shot by a sergeant."
+}

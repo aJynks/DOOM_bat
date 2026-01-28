@@ -30,7 +30,7 @@ $fileTable = @{
 # GROUP TABLE - Define groups of files to download together
 # ============================================================================
 $groupTable = @{
-    "doom" = @("doomtools", "doomrun", "playpal-ColorMaps", "doomcube", "doomrun", "drawmapsfromwad")
+    "doom" = @("doomtools", "doomrun", "playpal-ColorMaps", "doomcube", "doomrun")
     "gfxapps" = @("krita", "photoshop")
 }
 

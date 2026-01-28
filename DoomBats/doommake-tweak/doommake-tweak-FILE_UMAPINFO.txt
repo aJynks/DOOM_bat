@@ -1,0 +1,15 @@
+MAP MAP01
+{
+	levelname = "MAP01_NAME"
+	author = "AUTHOR01_NAME"
+	label = "01"
+	levelpic = "CWILV00"
+	next = "MAP02"
+	//nextsecret = "MAP02"
+	music = "D_RUNNIN"
+	skytexture = "SKY1"
+	partime = 1234
+	intertext = clear
+	//episode = "M_EPI1", "EPISODE1_NAME", "1"
+	// Music:
+}

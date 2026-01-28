@@ -1,0 +1,12 @@
+/*****************************************************************************
+ * DECOHack Patch File
+ * Main
+ ****************************************************************************/
+
+#include <dsdhacked>
+#include <friendly>
+
+// Your DECOHack code here ...
+//#include "strings.dh"
+
+
