@@ -16,12 +16,9 @@ $fileTable = @{
         "https://raw.githubusercontent.com/aJynks/DOOM_bat/refs/heads/main/Python/playpal-colorMap/playpal.bat"
     )
 #>
-    "doomtools" = "https://github.com/aJynks/DOOM_bat/tree/main/Doomtools"
-    "doomrun" = "https://github.com/aJynks/DOOM_bat/tree/main/doomRUN"
-    "doomcube" = "https://github.com/aJynks/DOOM_bat/tree/main/ImageEditor%20Scripts/DoomCube"
+    "doomtools" = "https://github.com/aJynks/DOOM_bat/tree/main/DoomBats"
     "krita" = "https://github.com/aJynks/DOOM_bat/tree/main/ImageEditor%20Scripts/Kirta"
     "photoshop" = "https://github.com/aJynks/DOOM_bat/tree/main/ImageEditor%20Scripts/Photoshop"
-    "drawmapsfromwad" = "https://github.com/aJynks/DOOM_bat/tree/main/Python/DrawMapsFromWAD"
     "playpal-ColorMaps" = "https://github.com/aJynks/DOOM_bat/tree/main/Python/playpal-colorMap"
     "png2cube" = "https://github.com/aJynks/DOOM_bat/tree/main/Python/png2Cube"
 }
@@ -30,7 +27,7 @@ $fileTable = @{
 # GROUP TABLE - Define groups of files to download together
 # ============================================================================
 $groupTable = @{
-    "doom" = @("doomtools", "doomrun", "playpal-ColorMaps", "doomcube", "doomrun")
+    "doom" = @("doomtools")
     "gfxapps" = @("krita", "photoshop")
 }
 
