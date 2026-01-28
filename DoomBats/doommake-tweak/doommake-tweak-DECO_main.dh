@@ -6,6 +6,11 @@
 #include <dsdhacked>
 #include <friendly>
 
+/* Legacy of Rust Sate and Thing Protection
+set state free safety on
+state protect 1100 to 1566
+each thing from 151 to 209 {}*/
+
 // Your DECOHack code here ...
 //#include "strings.dh"
 
