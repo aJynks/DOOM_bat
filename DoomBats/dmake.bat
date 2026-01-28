@@ -4,14 +4,14 @@ setlocal EnableExtensions EnableDelayedExpansion
 rem ==============================================================================
 rem Editable IWAD paths
 rem ==============================================================================
-set "IWAD_doom=d:\Games\Doom\_SourcePort\_iwads\doom.wad"
-set "IWAD_doom2=d:\Games\Doom\_SourcePort\_iwads\doom2.wad"
-set "IWAD_tnt=d:\Games\Doom\_SourcePort\_iwads\tnt.wad"
-set "IWAD_plutonia=d:\Games\Doom\_SourcePort\_iwads\plutonia.wad"
-set "IWAD_heretic=d:\Games\Doom\_SourcePort\_iwads\heretic.wad"
-set "IWAD_hexen=d:\Games\Doom\_SourcePort\_iwads\hexen.wad"
-set "IWAD_free1=d:\Games\Doom\_SourcePort\_iwads\freedoom1.wad"
-set "IWAD_free2=d:\Games\Doom\_SourcePort\_iwads\freedoom2.wad"
+set "IWAD_doom=x:\_iwads\doom.wad"
+set "IWAD_doom2=x:\_iwads\doom2.wad"
+set "IWAD_tnt=x:\_iwads\tnt.wad"
+set "IWAD_plutonia=x:\_iwads\plutonia.wad"
+set "IWAD_heretic=x:\_iwads\heretic.wad"
+set "IWAD_hexen=x:\_iwads\hexen.wad"
+set "IWAD_free1=x:\_iwads\freedoom1.wad"
+set "IWAD_free2=x:\_iwads\freedoom2.wad"
 
 rem ==============================================================================
 rem dmake.bat
@@ -95,45 +95,61 @@ set "IWAD_NAME=doom2"
 set "DIR_NAME="
 
 rem Move past the word "create"
+:skip_create_word
 shift
-if "%~1"=="" exit /b 2
+if "%~1"=="" (
+    echo Error: Project name required
+    echo Usage: dmake create ProjectName [-i iwad] [-d folder]
+    exit /b 2
+)
 
 set "PROJECT_NAME=%~1"
 shift
 
-:parse_create
-if "%~1"=="" goto show_create
+:parse_create_loop
+if "%~1"=="" goto execute_create
 
 if /I "%~1"=="-i" (
-    if "%~2"=="" exit /b 2
+    if "%~2"=="" (
+        echo Error: -i requires an IWAD name
+        exit /b 2
+    )
     set "IWAD_NAME=%~2"
     shift
     shift
-    goto parse_create
+    goto parse_create_loop
 )
 
 if /I "%~1"=="-d" (
-    if "%~2"=="" exit /b 2
+    if "%~2"=="" (
+        echo Error: -d requires a directory name
+        exit /b 2
+    )
     set "DIR_NAME=%~2"
     shift
     shift
-    goto parse_create
+    goto parse_create_loop
 )
 
+rem Unknown argument - skip it
 shift
-goto parse_create
+goto parse_create_loop
 
-:show_create
+:execute_create
 set "IWAD_PATH=!IWAD_%IWAD_NAME%!"
 
 echo I am in create mode
 echo.
 echo Project Name : %PROJECT_NAME%
-echo IWAD Path   : %IWAD_PATH%
-echo Directory   : %DIR_NAME%
+echo IWAD Path    : %IWAD_PATH%
+echo Directory    : %DIR_NAME%
 echo.
 
-if "%IWAD_PATH%"=="" exit /b 2
+if "%IWAD_PATH%"=="" (
+    echo Error: IWAD path not found for: %IWAD_NAME%
+    echo Available IWADs: doom, doom2, tnt, plutonia, heretic, hexen, free1, free2
+    exit /b 2
+)
 
 if defined DIR_NAME (
     if not exist "%DIR_NAME%" md "%DIR_NAME%"
@@ -148,11 +164,6 @@ if defined DIR_NAME (
 )
 
 endlocal & exit /b %CREATE_ERR%
-
-
-
-
-
 
 
 :help
@@ -173,6 +184,7 @@ echo     If ANY argument is "update", ALL other arguments are ignored and:
 echo       doomtools --update
 echo       doomtools --update-cleanup
 echo       doomtools --update-shell
+echo       doomtools --update-docs
 echo.
 echo     If ANY argument is "create", ALL other arguments are ignored and:
 echo       create mode is entered
@@ -181,5 +193,19 @@ echo USAGE
 echo   dmake [doommake_args...] [-- [doom_args...]]
 echo   dmake update
 echo   dmake create ProjectName [-i iwad] [-d folder]
+echo.
+echo CREATE MODE OPTIONS
+echo   ProjectName              Name of the project to create
+echo   -i iwad                  IWAD to use (default: doom2)
+echo                            Options: doom, doom2, tnt, plutonia, heretic,
+echo                                     hexen, free1, free2
+echo   -d folder                Directory to create project in (optional)
+echo.
+echo EXAMPLES
+echo   dmake create MyWAD
+echo   dmake create MyWAD -i doom -d projects
+echo   dmake create TestWAD -d "_01"
+echo   dmake -- -skill 4 -warp 1
+echo   dmake update
 echo.
 exit /b 0

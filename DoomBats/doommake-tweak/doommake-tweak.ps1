@@ -76,8 +76,8 @@ Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-textures-Restricted
 # ----------------------------------------------------------------------------
 # FILE Templates - Copy to various locations
 # ----------------------------------------------------------------------------
-Copy-FileTemplate -SourceFile "doommake-tweak-FILE_COMPLVL.txt" -DestPath ".\src\wads\textures" -Prefix "FILE_"
-Copy-FileTemplate -SourceFile "doommake-tweak-FILE_UMAPINFO.txt" -DestPath ".\src\maps" -Prefix "FILE_"
+Copy-FileTemplate -SourceFile "doommake-tweak-FILE_COMPLVL.txt" -DestPath ".\src\assets\_global" -Prefix "FILE_"
+Copy-FileTemplate -SourceFile "doommake-tweak-FILE_UMAPINFO.txt" -DestPath ".\src\assets\_global" -Prefix "FILE_"
 
 # ----------------------------------------------------------------------------
 # DECO Templates - Copy to .\src\decohack\
