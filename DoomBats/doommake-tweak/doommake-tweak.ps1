@@ -72,6 +72,7 @@ Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-dehonly.txt" -DestP
 Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-release-nopatch.txt" -DestPath ".\scripts" -Prefix "WADMERGE_"
 Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-textures-All.txt" -DestPath ".\scripts" -Prefix "WADMERGE_"
 Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-textures-Restricted.txt" -DestPath ".\scripts" -Prefix "WADMERGE_"
+Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-palette.txt" -DestPath ".\scripts" -Prefix "WADMERGE_"
 
 # ----------------------------------------------------------------------------
 # FILE Templates - Copy to various locations
@@ -299,6 +300,7 @@ Write-Host "New build targets available:" -ForegroundColor White
 Write-Host "  - doommake deco               (build a dehacked-only WAD)" -ForegroundColor Yellow
 Write-Host "  - doommake fresh              (clean the build dir + then a full rebuild)" -ForegroundColor Yellow
 Write-Host "  - doommake nopatch            (build Full Release with no DeHackEd)" -ForegroundColor Yellow
-Write-Host "  - doommake texturesrestricted (build a restricted texture wad for UDB)" -ForegroundColor Yellow
-Write-Host "  - doommake texturesall        (build a full texture wad for UDB, that can run previews)" -ForegroundColor Yellow
+Write-Host "  - doommake udb                (build a texture wad for UDB with restricted textures)" -ForegroundColor Yellow
+Write-Host "  - doommake udball             (build a texture wad for UDB with all textures.)" -ForegroundColor Yellow
+Write-Host "  - doommake playpal            (build a wad containing only the playpal, primary colourmaps and boom-style colourmaps)" -ForegroundColor Yellow
 Write-Host ""
