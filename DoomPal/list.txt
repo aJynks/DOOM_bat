@@ -1,0 +1,26 @@
+ Volume in drive D is Data
+ Volume Serial Number is 7EAF-F13E
+
+ Directory of d:\Projects\Doom Projects\repo-DoomBAT\DoomPal\_projectDir
+
+06/02/2026  09:15 AM    <DIR>          .
+06/02/2026  09:11 AM    <DIR>          ..
+03/02/2026  12:21 PM               401 .gitignore
+06/02/2026  09:08 AM    <DIR>          build
+06/02/2026  09:07 AM             3,566 build-EXEFiles-script.bat
+06/02/2026  09:08 AM    <DIR>          dist
+06/02/2026  09:08 AM    <DIR>          doompal
+06/02/2026  09:08 AM               711 doompal-standalone.spec
+03/02/2026  05:46 PM               237 doompal.bat
+03/02/2026  12:21 PM            31,834 doompal.py
+03/02/2026  12:21 PM            22,796 doompal.py.backup
+06/02/2026  09:07 AM               786 doompal.spec
+03/02/2026  12:21 PM             1,199 LICENSE
+06/02/2026  09:15 AM                 0 list.txt
+03/02/2026  12:21 PM               897 PROJECT_STRUCTURE.txt
+03/02/2026  12:21 PM             2,094 QUICKSTART.md
+03/02/2026  12:21 PM             3,174 README.md
+03/02/2026  12:21 PM                29 requirements.txt
+06/02/2026  08:54 AM    <DIR>          tests
+              13 File(s)         67,724 bytes
+               6 Dir(s)  833,350,881,280 bytes free

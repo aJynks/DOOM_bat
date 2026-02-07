@@ -1,0 +1,662 @@
+#!/usr/bin/env python3
+"""
+doompal - Doom Palette and Colormap Utilities
+Main CLI entry point
+"""
+
+import sys
+from pathlib import Path
+from PIL import Image
+
+from doompal import __version__
+from doompal.cli import parse_args
+from doompal.palette import load_palette, load_all_palettes, expand_palette_to_14, detect_palette_type
+from doompal.colormap import generate_colormap, colormap_to_png, colormap_to_binary
+from doompal.cube import palette_to_cube
+from doompal.wad import WADFile, extract_playpal, extract_colormap
+from doompal.utils import COLORS, GRID_SIZE
+
+
+def cmd_cube(args):
+    """Generate .cube LUT from palette"""
+    input_path = args.input
+    
+    # Determine output path
+    if args.output:
+        output_path = args.output
+        # Auto-add .cube extension if missing
+        if not str(output_path).endswith(".cube"):
+            output_path = Path(str(output_path) + ".cube")
+    else:
+        # Use input name with .cube extension
+        output_path = input_path.with_suffix(".cube")
+    
+    try:
+        print(f"Loading palette from: {input_path}")
+        
+        # Handle WAD files
+        if input_path.suffix.lower() == ".wad":
+            data = extract_playpal(input_path)
+            if data is None:
+                print(f"ERROR: PLAYPAL not found in WAD: {input_path}", file=sys.stderr)
+                return 1
+            
+            # Extract pal0 from PLAYPAL
+            from doompal.palette import extract_palette_from_binary
+            palette = extract_palette_from_binary(data, 0)
+        else:
+            palette = load_palette(input_path)
+        
+        print(f"Generating HALD CLUT and converting to .cube...")
+        palette_to_cube(palette, output_path)
+        
+        print(f"Successfully wrote: {output_path}")
+        return 0
+        
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_batch(args):
+    """Generate all outputs (playpal, colormap, blanks)"""
+    input_path = args.input
+    output_base = args.output
+    
+    try:
+        print(f"Loading palette from: {input_path}")
+        palette = load_palette(input_path)
+        
+        # Expand to 14 palettes
+        palettes = expand_palette_to_14(palette)
+        
+        # Generate all outputs
+        outputs = {}
+        
+        # 1. PLAYPAL PNG (256×14)
+        playpal_path = Path(f"{output_base}_playpal.png")
+        img = Image.new("RGB", (COLORS, 14))
+        px = img.load()
+        for row in range(14):
+            for col in range(COLORS):
+                px[col, row] = palettes[row][col]
+        img.save(playpal_path)
+        outputs["PLAYPAL"] = playpal_path
+        
+        # 2. COLORMAP PNG (256×34 with lighting)
+        colormap_path = Path(f"{output_base}_colormap.png")
+        colormap = generate_colormap(palette, with_lighting=True)
+        colormap_to_png(colormap, palette, colormap_path)
+        outputs["COLORMAP"] = colormap_path
+        
+        # 3. Blank PLAYPAL (pal0 repeated)
+        blank_playpal_path = Path(f"{output_base}_playpal_blank.png")
+        img_blank = Image.new("RGB", (COLORS, 14))
+        px_blank = img_blank.load()
+        for row in range(14):
+            for col in range(COLORS):
+                px_blank[col, row] = palette[col]
+        img_blank.save(blank_playpal_path)
+        outputs["Blank PLAYPAL"] = blank_playpal_path
+        
+        # 4. Blank COLORMAP (no lighting)
+        blank_colormap_path = Path(f"{output_base}_colormap_blank.png")
+        colormap_blank = generate_colormap(palette, with_lighting=False)
+        colormap_to_png(colormap_blank, palette, blank_colormap_path)
+        outputs["Blank COLORMAP"] = blank_colormap_path
+        
+        print("Generated files:")
+        for name, path in outputs.items():
+            print(f"  {name}: {path}")
+        
+        return 0
+        
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_playpal(args):
+    """Generate 256×14 PLAYPAL PNG"""
+    input_path = args.input
+    output_path = args.output
+    
+    try:
+        print(f"Loading palette from: {input_path}")
+        
+        # Try to load all 14 palettes
+        kind = detect_palette_type(str(input_path))
+        
+        if kind in ("playpal14PNG", "playpal.pal binary"):
+            # Has 14 palettes
+            palettes = load_all_palettes(input_path)
+        else:
+            # Single palette - expand to 14
+            palette = load_palette(input_path)
+            palettes = expand_palette_to_14(palette)
+            print("Note: Single palette detected, duplicating to 14 rows")
+        
+        # Create 256×14 PNG
+        img = Image.new("RGB", (COLORS, 14))
+        px = img.load()
+        
+        for row in range(14):
+            for col in range(COLORS):
+                px[col, row] = palettes[row][col]
+        
+        img.save(output_path)
+        print(f"Successfully wrote: {output_path}")
+        return 0
+        
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_colormap(args):
+    """Generate 256×34 colormap PNG with lighting"""
+    input_path = args.input
+    output_path = args.output
+    
+    try:
+        print(f"Loading palette from: {input_path}")
+        palette = load_palette(input_path)  # Always use pal0
+        
+        print("Generating colormap with lighting...")
+        colormap = generate_colormap(palette, with_lighting=True)
+        colormap_to_png(colormap, palette, output_path)
+        
+        print(f"Successfully wrote: {output_path}")
+        return 0
+        
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_slade(args):
+    """Generate SLADE-style 16×16 grid palette"""
+    input_path = args.input
+    output_base = args.output
+    cell_size = args.cell
+    
+    try:
+        print(f"Loading palette from: {input_path}")
+        
+        # Determine if we have 14 palettes or just 1
+        kind = detect_palette_type(str(input_path))
+        
+        if args.all and kind in ("playpal14PNG", "playpal.pal binary"):
+            # Load all 14 palettes
+            palettes = load_all_palettes(input_path)
+            count = 14
+        elif args.all:
+            # Single palette but user wants -all
+            palette = load_palette(input_path)
+            palettes = [palette]
+            count = 1
+            print("WARNING: Only 1 palette available, outputting pal0 only")
+        else:
+            # Just pal0
+            palette = load_palette(input_path)
+            palettes = [palette]
+            count = 1
+        
+        # Generate grid PNGs
+        grid_size = GRID_SIZE * cell_size  # 16 * 8 = 128 by default
+        
+        for p in range(count):
+            pal = palettes[p]
+            
+            # Create 16×16 grid
+            img = Image.new("RGB", (grid_size, grid_size))
+            px = img.load()
+            
+            idx = 0
+            for gy in range(GRID_SIZE):
+                for gx in range(GRID_SIZE):
+                    color = pal[idx]
+                    
+                    # Fill cell
+                    x0 = gx * cell_size
+                    y0 = gy * cell_size
+                    for yy in range(y0, y0 + cell_size):
+                        for xx in range(x0, x0 + cell_size):
+                            px[xx, yy] = color
+                    
+                    idx += 1
+            
+            output_path = Path(f"{output_base}_pal{p}.png")
+            img.save(output_path)
+            print(f"Wrote: {output_path} ({grid_size}×{grid_size})")
+        
+        return 0
+        
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_extract(args):
+    """Extract PLAYPAL and COLORMAP from WAD"""
+    wad_path = args.wad
+    
+    # Determine output base name
+    if args.output:
+        output_base = args.output
+    else:
+        output_base = wad_path.stem
+    
+    try:
+        wad = WADFile(wad_path)
+        
+        # Handle -boomlist
+        if args.boomlist:
+            boom_maps = wad.find_boom_colormaps()
+            if boom_maps:
+                print("Boom colormaps found:")
+                for name in boom_maps:
+                    print(f"  - {name}")
+            else:
+                print("No Boom colormaps found (no C_START/C_END markers)")
+            return 0
+        
+        # Determine what to extract
+        extract_playpal_lump = True
+        extract_colormap_lump = True
+        extract_boom = []
+        
+        if args.boom is not None:
+            if args.boom == "__all__":
+                # Extract all Boom colormaps only
+                extract_playpal_lump = False
+                extract_colormap_lump = False
+                extract_boom = wad.find_boom_colormaps()
+            else:
+                # Extract specific Boom colormap only
+                extract_playpal_lump = False
+                extract_colormap_lump = False
+                extract_boom = [args.boom.upper()]
+        else:
+            # Default: extract everything
+            extract_boom = wad.find_boom_colormaps()
+        
+        extracted = []
+        
+        # Extract PLAYPAL
+        if extract_playpal_lump:
+            if wad.has_lump("PLAYPAL"):
+                data = wad.read_lump("PLAYPAL")
+                
+                # Save .pal binary
+                pal_path = Path(f"{output_base}_playpal.pal")
+                pal_path.write_bytes(data)
+                extracted.append(f"PLAYPAL → {pal_path}")
+                
+                # Save PNG visualization
+                from doompal.palette import extract_palette_from_binary
+                img = Image.new("RGB", (COLORS, 14))
+                px = img.load()
+                for row in range(14):
+                    pal = extract_palette_from_binary(data, row)
+                    for col in range(COLORS):
+                        px[col, row] = pal[col]
+                
+                png_path = Path(f"{output_base}_playpal.png")
+                img.save(png_path)
+                extracted.append(f"PLAYPAL → {png_path} (visualization)")
+            else:
+                print("WARNING: PLAYPAL not found in WAD")
+        
+        # Extract COLORMAP
+        if extract_colormap_lump:
+            if wad.has_lump("COLORMAP"):
+                data = wad.read_lump("COLORMAP")
+                
+                # Save .cmp binary
+                cmp_path = Path(f"{output_base}_colormap.cmp")
+                cmp_path.write_bytes(data)
+                extracted.append(f"COLORMAP → {cmp_path}")
+                
+                # Save PNG visualization
+                # Load primary palette for visualization
+                if wad.has_lump("PLAYPAL"):
+                    playpal_data = wad.read_lump("PLAYPAL")
+                    from doompal.palette import extract_palette_from_binary
+                    palette = extract_palette_from_binary(playpal_data, 0)
+                    
+                    img = Image.new("RGB", (COLORS, 34))
+                    px = img.load()
+                    
+                    for y in range(34):
+                        for x in range(COLORS):
+                            idx = data[y * COLORS + x]
+                            px[x, y] = palette[idx]
+                    
+                    png_path = Path(f"{output_base}_colormap.png")
+                    img.save(png_path)
+                    extracted.append(f"COLORMAP → {png_path} (visualization)")
+            else:
+                print("WARNING: COLORMAP not found in WAD")
+        
+        # Extract Boom colormaps
+        for lump_name in extract_boom:
+            if wad.has_lump(lump_name):
+                data = wad.read_lump(lump_name)
+                
+                # Save .cmp binary
+                cmp_path = Path(f"{output_base}_{lump_name}.cmp")
+                cmp_path.write_bytes(data)
+                extracted.append(f"{lump_name} → {cmp_path}")
+                
+                # Save PNG visualization (if PLAYPAL available)
+                if wad.has_lump("PLAYPAL"):
+                    playpal_data = wad.read_lump("PLAYPAL")
+                    from doompal.palette import extract_palette_from_binary
+                    palette = extract_palette_from_binary(playpal_data, 0)
+                    
+                    rows = len(data) // COLORS
+                    img = Image.new("RGB", (COLORS, rows))
+                    px = img.load()
+                    
+                    for y in range(rows):
+                        for x in range(COLORS):
+                            idx = data[y * COLORS + x]
+                            px[x, y] = palette[idx]
+                    
+                    png_path = Path(f"{output_base}_{lump_name}.png")
+                    img.save(png_path)
+                    extracted.append(f"{lump_name} → {png_path} (visualization)")
+        
+        if extracted:
+            print("Extracted files:")
+            for item in extracted:
+                print(f"  {item}")
+            return 0
+        else:
+            print("No lumps extracted")
+            return 1
+        
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_split(args):
+    """
+    Extract tint overlay from PLAYPAL as transparent PNG.
+    
+    Creates a 256×14 RGBA PNG where:
+    - Row 0 is fully transparent (pal0 has no tint)
+    - Rows 1-13 show only the tint color with appropriate transparency
+    """
+    input_path = args.input
+    output_path = args.output
+    
+    try:
+        # Load the 256×14 PLAYPAL PNG
+        img = Image.open(input_path).convert("RGB")
+        w, h = img.size
+        
+        if w != COLORS or h != 14:
+            print(f"ERROR: Input must be 256×14 PLAYPAL PNG. Got {w}×{h}", file=sys.stderr)
+            return 1
+        
+        px = img.load()
+        
+        # Create output RGBA image
+        out = Image.new("RGBA", (COLORS, 14))
+        out_px = out.load()
+        
+        # Row 0: fully transparent
+        for x in range(COLORS):
+            out_px[x, 0] = (0, 0, 0, 0)
+        
+        # Rows 1-13: extract the tint
+        # For each pixel, we need to reverse the blend:
+        # result = pal0 * (1-amount) + tint * amount
+        # We know: pal0 (row 0), result (row N)
+        # We want: tint color and amount
+        
+        # Known tint amounts and colors from palette.py
+        tints = [
+            None,  # Row 0 - no tint
+            ((252, 2, 3), 0.11),      # Row 1
+            ((255, 0, 0), 0.22),      # Row 2
+            ((255, 0, 0), 0.33),      # Row 3
+            ((255, 0, 0), 0.44),      # Row 4
+            ((255, 0, 0), 0.55),      # Row 5
+            ((255, 0, 0), 0.66),      # Row 6
+            ((255, 0, 0), 0.77),      # Row 7
+            ((255, 0, 0), 0.88),      # Row 8
+            ((215, 185, 68), 0.12),   # Row 9
+            ((215, 185, 68), 0.25),   # Row 10
+            ((215, 185, 68), 0.375),  # Row 11
+            ((215, 185, 68), 0.50),   # Row 12
+            ((3, 253, 3), 0.125),     # Row 13
+        ]
+        
+        for row in range(1, 14):
+            tint_color, tint_amount = tints[row]
+            
+            # Use the tint color with alpha based on tint amount
+            # Convert amount (0.0-1.0) to alpha (0-255)
+            alpha = int(tint_amount * 255)
+            
+            for x in range(COLORS):
+                r, g, b = tint_color
+                out_px[x, row] = (r, g, b, alpha)
+        
+        out.save(output_path)
+        print(f"Successfully wrote transparent overlay: {output_path}")
+        print("Note: Row 0 is fully transparent, rows 1-13 show tint colors with transparency")
+        return 0
+        
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+
+
+def main():
+    """Main entry point"""
+    args = parse_args()
+    
+    if not args.mode:
+        print("ERROR: No mode specified. Use --help for usage information.", file=sys.stderr)
+        return 1
+    
+    # Dispatch to appropriate command handler
+    handlers = {
+        "cube": cmd_cube,
+        "batch": cmd_batch,
+        "playpal": cmd_playpal,
+        "colormap": cmd_colormap,
+        "colourmap": cmd_colormap,  # Alias
+        "slade": cmd_slade,
+        "extract": cmd_extract,
+        "split": cmd_split,
+    }
+    
+    handler = handlers.get(args.mode)
+    if handler:
+        return handler(args)
+    else:
+        print(f"ERROR: Unknown mode: {args.mode}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+    """Extract PLAYPAL and COLORMAP from WAD"""
+    wad_path = args.wad
+    
+    # Determine output base name
+    if args.output:
+        output_base = args.output
+    else:
+        output_base = wad_path.stem
+    
+    try:
+        wad = WADFile(wad_path)
+        
+        # Handle -boomlist
+        if args.boomlist:
+            boom_maps = wad.find_boom_colormaps()
+            if boom_maps:
+                print("Boom colormaps found:")
+                for name in boom_maps:
+                    print(f"  - {name}")
+            else:
+                print("No Boom colormaps found (no C_START/C_END markers)")
+            return 0
+        
+        # Determine what to extract
+        extract_playpal_lump = True
+        extract_colormap_lump = True
+        extract_boom = []
+        
+        if args.boom is not None:
+            if args.boom == "__all__":
+                # Extract all Boom colormaps only
+                extract_playpal_lump = False
+                extract_colormap_lump = False
+                extract_boom = wad.find_boom_colormaps()
+            else:
+                # Extract specific Boom colormap only
+                extract_playpal_lump = False
+                extract_colormap_lump = False
+                extract_boom = [args.boom.upper()]
+        else:
+            # Default: extract everything
+            extract_boom = wad.find_boom_colormaps()
+        
+        extracted = []
+        
+        # Extract PLAYPAL
+        if extract_playpal_lump:
+            if wad.has_lump("PLAYPAL"):
+                data = wad.read_lump("PLAYPAL")
+                
+                # Save .pal binary
+                pal_path = Path(f"{output_base}_playpal.pal")
+                pal_path.write_bytes(data)
+                extracted.append(f"PLAYPAL → {pal_path}")
+                
+                # Save PNG visualization
+                from doompal.palette import extract_palette_from_binary
+                img = Image.new("RGB", (COLORS, 14))
+                px = img.load()
+                for row in range(14):
+                    pal = extract_palette_from_binary(data, row)
+                    for col in range(COLORS):
+                        px[col, row] = pal[col]
+                
+                png_path = Path(f"{output_base}_playpal.png")
+                img.save(png_path)
+                extracted.append(f"PLAYPAL → {png_path} (visualization)")
+            else:
+                print("WARNING: PLAYPAL not found in WAD")
+        
+        # Extract COLORMAP
+        if extract_colormap_lump:
+            if wad.has_lump("COLORMAP"):
+                data = wad.read_lump("COLORMAP")
+                
+                # Save .cmp binary
+                cmp_path = Path(f"{output_base}_colormap.cmp")
+                cmp_path.write_bytes(data)
+                extracted.append(f"COLORMAP → {cmp_path}")
+                
+                # Save PNG visualization
+                # Load primary palette for visualization
+                if wad.has_lump("PLAYPAL"):
+                    playpal_data = wad.read_lump("PLAYPAL")
+                    from doompal.palette import extract_palette_from_binary
+                    palette = extract_palette_from_binary(playpal_data, 0)
+                    
+                    img = Image.new("RGB", (COLORS, 34))
+                    px = img.load()
+                    
+                    for y in range(34):
+                        for x in range(COLORS):
+                            idx = data[y * COLORS + x]
+                            px[x, y] = palette[idx]
+                    
+                    png_path = Path(f"{output_base}_colormap.png")
+                    img.save(png_path)
+                    extracted.append(f"COLORMAP → {png_path} (visualization)")
+            else:
+                print("WARNING: COLORMAP not found in WAD")
+        
+        # Extract Boom colormaps
+        for lump_name in extract_boom:
+            if wad.has_lump(lump_name):
+                data = wad.read_lump(lump_name)
+                
+                # Save .cmp binary
+                cmp_path = Path(f"{output_base}_{lump_name}.cmp")
+                cmp_path.write_bytes(data)
+                extracted.append(f"{lump_name} → {cmp_path}")
+                
+                # Save PNG visualization (if PLAYPAL available)
+                if wad.has_lump("PLAYPAL"):
+                    playpal_data = wad.read_lump("PLAYPAL")
+                    from doompal.palette import extract_palette_from_binary
+                    palette = extract_palette_from_binary(playpal_data, 0)
+                    
+                    rows = len(data) // COLORS
+                    img = Image.new("RGB", (COLORS, rows))
+                    px = img.load()
+                    
+                    for y in range(rows):
+                        for x in range(COLORS):
+                            idx = data[y * COLORS + x]
+                            px[x, y] = palette[idx]
+                    
+                    png_path = Path(f"{output_base}_{lump_name}.png")
+                    img.save(png_path)
+                    extracted.append(f"{lump_name} → {png_path} (visualization)")
+        
+        if extracted:
+            print("Extracted files:")
+            for item in extracted:
+                print(f"  {item}")
+            return 0
+        else:
+            print("No lumps extracted")
+            return 1
+        
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+
+
+def main():
+    """Main entry point"""
+    args = parse_args()
+    
+    if not args.mode:
+        print("ERROR: No mode specified. Use --help for usage information.", file=sys.stderr)
+        return 1
+    
+    # Dispatch to appropriate command handler
+    handlers = {
+        "cube": cmd_cube,
+        "batch": cmd_batch,
+        "playpal": cmd_playpal,
+        "colormap": cmd_colormap,
+        "colourmap": cmd_colormap,  # Alias
+        "slade": cmd_slade,
+        "extract": cmd_extract,
+    }
+    
+    handler = handlers.get(args.mode)
+    if handler:
+        return handler(args)
+    else:
+        print(f"ERROR: Unknown mode: {args.mode}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

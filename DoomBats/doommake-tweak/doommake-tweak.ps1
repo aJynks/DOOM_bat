@@ -73,6 +73,7 @@ Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-release-nopatch.txt
 Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-textures-All.txt" -DestPath ".\scripts" -Prefix "WADMERGE_"
 Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-textures-Restricted.txt" -DestPath ".\scripts" -Prefix "WADMERGE_"
 Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-palette.txt" -DestPath ".\scripts" -Prefix "WADMERGE_"
+Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-playpal-all.txt" -DestPath ".\scripts" -Prefix "WADMERGE_"
 
 # ----------------------------------------------------------------------------
 # FILE Templates - Copy to various locations
@@ -303,4 +304,5 @@ Write-Host "  - doommake nopatch            (build Full Release with no DeHackEd
 Write-Host "  - doommake udb                (build a texture wad for UDB with restricted textures)" -ForegroundColor Yellow
 Write-Host "  - doommake udball             (build a texture wad for UDB with all textures.)" -ForegroundColor Yellow
 Write-Host "  - doommake playpal            (build a wad containing only the playpal, primary colourmaps and boom-style colourmaps)" -ForegroundColor Yellow
+Write-Host "  - doommake releasetest        (build a release wad but do not create any other wads. Good for palette testing!)" -ForegroundColor Yellow
 Write-Host ""

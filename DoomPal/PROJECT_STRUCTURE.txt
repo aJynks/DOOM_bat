@@ -1,0 +1,17 @@
+doompal/
+├── README.md                 # Project documentation
+├── LICENSE                   # MIT License
+├── requirements.txt          # Python dependencies
+├── doompal.spec             # PyInstaller build spec
+├── doompal.py               # Main CLI entry point
+├── doompal/                 # Main package
+│   ├── __init__.py
+│   ├── cli.py              # Command-line argument parsing
+│   ├── palette.py          # Palette loading/detection/extraction
+│   ├── hald.py             # HALD CLUT generation
+│   ├── colormap.py         # Colormap generation
+│   ├── cube.py             # .cube file generation
+│   ├── wad.py              # WAD file reading/extraction
+│   └── utils.py            # Shared utilities
+└── tests/                   # Unit tests (future)
+    └── __init__.py

@@ -1,0 +1,101 @@
+# ===========================================================================
+# WadMerge Script for PlayPal-All WAD
+# ===========================================================================
+# Creates a complete playable WAD by combining all assets, textures, and maps
+# directly without building intermediate WAD files.
+#
+# Argument 0: The build directory.
+# Argument 1: The source directory.
+# Argument 2: The output WAD (playpal-all.wad)
+#
+
+# Turn all carats/circumflexes in filenames into backslashes in entries.
+filecharsub ^ \
+
+create out
+
+# ===========================================================================
+# PROJECT INFO (from merge-release.txt)
+# ===========================================================================
+datemarker out __VER__
+mergefile  out $1/wadinfo.txt
+mergefile  out $1/credits.txt
+
+# ===========================================================================
+# ASSETS (from merge-assets.txt)
+# ===========================================================================
+
+# Globals
+mergedir  out $1/assets/_global nomarkers
+
+# Palettes
+mergedir  out $1/assets/palettes nomarkers
+mergedir  out $0/convert/palettes nomarkers
+
+# Primary Colormaps
+mergedir  out $1/assets/colormaps nomarkers
+mergedir  out $0/convert/colormaps nomarkers
+
+# Graphics
+mergedir  out $1/assets/graphics nomarkers
+mergedir  out $0/convert/graphics nomarkers
+
+# Sounds
+mergedir  out $1/assets/sounds nomarkers
+mergedir  out $0/convert/sounds nomarkers
+
+# Music
+mergedir  out $1/assets/music nomarkers
+
+# Sprites
+marker    out ss_start
+mergedir  out $1/assets/sprites nomarkers
+mergedir  out $0/convert/sprites nomarkers
+marker    out ss_end
+
+# ACS Libraries
+marker    out a_start
+mergedir  out $1/assets/acslib nomarkers
+marker    out a_end
+
+# Secondary Colormaps
+marker    out c_start
+mergedir  out $1/assets/colormaps-secondary nomarkers
+mergedir  out $0/convert/colormaps-secondary nomarkers
+marker    out c_end
+
+# ===========================================================================
+# TEXTURES (from merge-textures.txt)
+# ===========================================================================
+
+# Create texture definitions
+mergedeutexfile    out $1/textures/texture1.txt
+mergedeutexfile    out $1/textures/texture2.txt
+mergeswantbls      out $1/textures/defswani.txt
+
+# Merge Flats
+marker             out ff_start
+mergenamespacefile out $1/textures/animflats.wad ff
+mergedir           out $1/textures/flats
+mergedir           out $0/convert/flats
+marker             out ff_end
+
+# Merge Patches
+marker             out pp_start
+mergedir           out $1/textures/patches
+mergedir           out $0/convert/patches
+marker             out pp_end
+
+# Merge Additional Single-Patch Textures
+mergetexturedir    out $1/textures/texture1 texture1
+mergetexturedir    out $0/convert/texture1 texture1
+mergetexturedir    out $1/textures/texture2 texture2
+mergetexturedir    out $0/convert/texture2 texture2
+
+# ===========================================================================
+# MAPS (from merge-maps.txt)
+# ===========================================================================
+mergewaddir out $1/maps
+
+finish out $0/$2
+end
