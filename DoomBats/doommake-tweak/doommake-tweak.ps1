@@ -301,8 +301,9 @@ Write-Host "New build targets available:" -ForegroundColor White
 Write-Host "  - doommake deco               (build a dehacked-only WAD)" -ForegroundColor Yellow
 Write-Host "  - doommake fresh              (clean the build dir + then a full rebuild)" -ForegroundColor Yellow
 Write-Host "  - doommake nopatch            (build Full Release with no DeHackEd)" -ForegroundColor Yellow
-Write-Host "  - doommake udb                (build a texture wad for UDB with restricted textures)" -ForegroundColor Yellow
+Write-Host "  - doommake udbrestricted      (build a texture wad for UDB with restricted textures)" -ForegroundColor Yellow
 Write-Host "  - doommake udball             (build a texture wad for UDB with all textures.)" -ForegroundColor Yellow
+Write-Host "  - doommake udb                (build a both restricted and all UDB texture wads)" -ForegroundColor Yellow
 Write-Host "  - doommake playpal            (build a wad containing only the playpal, primary colourmaps and boom-style colourmaps)" -ForegroundColor Yellow
-Write-Host "  - doommake releasetest        (build a release wad but do not create any other wads. Good for palette testing!)" -ForegroundColor Yellow
+Write-Host "  - doommake release1           (build a release wad but do not create any other wads. Good for palette testing!)" -ForegroundColor Yellow
 Write-Host ""
