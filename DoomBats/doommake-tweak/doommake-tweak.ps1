@@ -80,6 +80,7 @@ Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-playpal-all.txt" -D
 # ----------------------------------------------------------------------------
 Copy-FileTemplate -SourceFile "doommake-tweak-FILE_COMPLVL.txt" -DestPath ".\src\assets\_global" -Prefix "FILE_"
 Copy-FileTemplate -SourceFile "doommake-tweak-FILE_UMAPINFO.txt" -DestPath ".\src\assets\_global" -Prefix "FILE_"
+Copy-FileTemplate -SourceFile "doommake-tweak-FILE_credits.txt" -DestPath ".\src" -Prefix "FILE_"
 
 # ----------------------------------------------------------------------------
 # DECO Templates - Copy to .\src\decohack\

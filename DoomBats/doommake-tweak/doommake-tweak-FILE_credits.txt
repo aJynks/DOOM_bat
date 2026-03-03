@@ -1,0 +1,30 @@
+╔════════════════════════════════════════════════╗
+║                PROJECT CREDITS                 ║
+╚════════════════════════════════════════════════╝
+
+/================================================\
+||     MAJOR DOOM COMMUNITY SOFTWARE USED       ||
+\================================================/
+
+- DoomTools
+  https://mtrop.github.io/DoomTools/
+  
+- SLADE
+  https://slade.mancubus.net/index.php?page=downloads
+
+- Ultimate Doom Builder
+  https://ultimatedoombuilder.github.io/
+
+
+/================================================\
+||        PALETTE TRANSLATION STRINGS           ||
+\================================================/
+- Colourful Hell v1.04
+  https://forum.zdoom.org/viewtopic.php?t=47980
+
+
+/================================================\
+||            Special Thanks                    ||
+\================================================/
+- WASDBjohn
+  * DECOHack advice and guidance
