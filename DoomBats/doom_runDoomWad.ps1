@@ -2,40 +2,43 @@
 # Editable Values
 
 $sourcePort_exes = @{
-    "cherry" = "d:\Games\Doom\_SourcePort\Cherry-Doom\cherry-doom.exe"
-    "choco"  = "d:\Games\Doom\_SourcePort\Chocolate-Doom\chocolate-doom.exe"
-    "crispy" = "d:\Games\Doom\_SourcePort\Crispy-Doom\crispy-doom.exe"
-    "dsda"   = "d:\Games\Doom\_SourcePort\dsda-Doom\dsda-doom.exe"
+    "cherry" = "d:\Project\Doom Projects\_SourcePorts\Cherry-Doom\cherry-doom.exe"
+    "choco"  = "d:\Project\Doom Projects\_SourcePorts\Chocolate-Doom\chocolate-doom.exe"
+    "crispy" = "d:\Project\Doom Projects\_SourcePorts\Crispy-Doom\crispy-doom.exe"
+    "dsda"   = "d:\Project\Doom Projects\_SourcePorts\dsda-Doom\dsda-doom.exe"
     "edge"   = ""
-    "helion" = "d:\Games\Doom\_SourcePort\Helion-Doom\Helion.exe"
-    "kex"    = "d:\Games\Doom\_SourcePort\Kex-Doom\DOOM + DOOM II\doom_gog.exe"
-    "nugget" = "d:\Games\Doom\_SourcePort\Nugget-Doom\nugget-doom.exe"
-    "nyan"   = "d:\Games\Doom\_SourcePort\Nyan-Doom\nyan-doom.exe"
+    "helion" = "d:\Project\Doom Projects\_SourcePorts\Helion-Doom\Helion.exe"
+    "kex"    = "d:\Project\Doom Projects\_SourcePorts\Kex-Doom\DOOM + DOOM II\doom_gog.exe"
+    "nugget" = "d:\Project\Doom Projects\_SourcePorts\Nugget-Doom\nugget-doom.exe"
+    "nyan"   = "d:\Project\Doom Projects\_SourcePorts\Nyan-Doom\nyan-doom.exe"
     "retro"  = ""
-    "uz"     = "d:\Games\Doom\_SourcePort\uzDoom\uzdoom.exe"
-    "woof"   = "d:\Games\Doom\_SourcePort\Woof-Doom\woof.exe"
+    "uz"     = "d:\Project\Doom Projects\_SourcePorts\uzDoom\uzdoom.exe"
+    "woof"   = "d:\Project\Doom Projects\_SourcePorts\Woof-Doom\woof.exe"
 }
 
 $iwads = @{
-    "doom"     = "d:\Games\Doom\_SourcePort\_iwads\doom.wad"
-    "doom2"    = "d:\Games\Doom\_SourcePort\_iwads\doom2.wad"
-    "tnt"      = "d:\Games\Doom\_SourcePort\_iwads\tnt.wad"
-    "plutonia" = "d:\Games\Doom\_SourcePort\_iwads\plutonia.wad"
-    "heretic"  = "d:\Games\Doom\_SourcePort\_iwads\heretic.wad"
-    "hexen"    = "d:\Games\Doom\_SourcePort\_iwads\hexen.wad"
-    "free1"    = "d:\Games\Doom\_SourcePort\_iwads\freedoom1.wad"
-    "free2"    = "d:\Games\Doom\_SourcePort\_iwads\freedoom2.wad"
+    "doom"     = "d:\Project\Doom Projects\_SourcePorts\_iwads\doom.wad"
+    "doom2"    = "d:\Project\Doom Projects\_SourcePorts\_iwads\doom2.wad"
+    "tnt"      = "d:\Project\Doom Projects\_SourcePorts\_iwads\tnt.wad"
+    "plutonia" = "d:\Project\Doom Projects\_SourcePorts\_iwads\plutonia.wad"
+    "heretic"  = "d:\Project\Doom Projects\_SourcePorts\_iwads\heretic.wad"
+    "hexen"    = "d:\Project\Doom Projects\_SourcePorts\_iwads\hexen.wad"
+    "free1"    = "d:\Project\Doom Projects\_SourcePorts\_iwads\freedoom1.wad"
+    "free2"    = "d:\Project\Doom Projects\_SourcePorts\_iwads\freedoom2.wad"
 }
 
 # Pak definitions (loaded BEFORE folder-selected WAD, and also BEFORE DoomMake release/dehacked WADs)
 $pak = @{
     "pak1" = @(
-        "d:\Games\Doom\Wads and Mods\_tweaks\dsda-nyan\Extended Hud - LevelInfo\Vertical\Time on Bar\extHUD_dsda-nyan_VERTICAL_MapName.wad",
-        "d:\Games\Doom\Wads and Mods\_tweaks\All Ports\StatusBars\statusBar-GFXonly-Glasses.wad"
+        "d:\Project\Doom Projects\_SourcePorts\_paks\extHUD_dsda-nyan_VERTICAL_MapName.wad",
+        "d:\Project\Doom Projects\_SourcePorts\_paks\statusBar-GFXonly-Glasses.wad"
     )
     "pak2" = @(
-        "d:\Games\Doom\Wads and Mods\_tweaks\dsda-nyan\Extended Hud - LevelInfo\Vertical\Time on Screen\extHUD_dsda-nyan_VERTICAL_Time.MapName.wad",
-        "d:\Games\Doom\Wads and Mods\_tweaks\All Ports\StatusBars\statusBar-GFXonly-Helmet.wad"
+        "d:\Project\Doom Projects\_SourcePorts\_paks\extHUD_dsda-nyan_VERTICAL_Time.MapName.wad",
+        "d:\Project\Doom Projects\_SourcePorts\_paks\statusBar-GFXonly-Helmet.wad"
+    )
+	"origGuns" = @(
+        "d:\Project\Doom Projects\_SourcePorts\_paks\Doom2-Original_Sound-All_Weapons.wad"
     )
 }
 

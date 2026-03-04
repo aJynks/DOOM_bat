@@ -1,7 +1,7 @@
 MAP MAP01
 {
 	levelname = "MAP01_NAME"
-	author = "AUTHOR01_NAME"
+	author = "aJynks"
 	label = "01"
 	levelpic = "CWILV00"
 	next = "MAP02"

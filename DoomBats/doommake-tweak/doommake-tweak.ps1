@@ -4,6 +4,10 @@
 # Tweaks a fresh DoomMake project to add custom build targets and functions
 # ============================================================================
 
+param(
+    [string]$IwadPath = ""
+)
+
 $ErrorActionPreference = "Stop"
 $base = Get-Location
 
@@ -20,6 +24,42 @@ if (!(Test-Path "doommake.script")) {
 }
 
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+# ============================================================================
+# PRE-STEP: Resolve {{PROJECT_IWAD}} placeholder in doommake.properties
+# ============================================================================
+# doommake --project-type creates doommake.properties from a template that
+# contains the literal placeholder {{PROJECT_IWAD}}. When piped via stdin the
+# value may not be substituted. We accept the real IWAD path as an optional
+# first argument and patch the file directly before running any doommake cmds.
+#
+# Usage: doommake-tweak.ps1 [-IwadPath "D:\path\to\doom2.wad"]
+
+$propsPath = ".\doommake.properties"
+if (Test-Path $propsPath) {
+    $propsContent = Get-Content $propsPath -Raw
+
+    if ($propsContent -match '\{\{PROJECT_IWAD\}\}') {
+        # If no path was passed as a param, try to find it in the file itself
+        # (some doommake versions write it correctly on a separate key)
+        if (-not $IwadPath) {
+            $iwadLine = (Get-Content $propsPath) | Where-Object { $_ -match '^\s*iwad\s*=' -and $_ -notmatch '\{\{' } | Select-Object -First 1
+            if ($iwadLine) {
+                $IwadPath = ($iwadLine -split '=', 2)[1].Trim()
+            }
+        }
+
+        if ($IwadPath -and (Test-Path $IwadPath)) {
+            Write-Host "  [Fixing] Replacing {{PROJECT_IWAD}} -> $IwadPath" -ForegroundColor Cyan
+            $propsContent = $propsContent -replace '\{\{PROJECT_IWAD\}\}', ($IwadPath -replace '\\', '\\')
+            [System.IO.File]::WriteAllText($propsPath, $propsContent, $utf8NoBom)
+        } else {
+            Write-Host "  [WARNING] {{PROJECT_IWAD}} placeholder found but no valid IWAD path available." -ForegroundColor Red
+            Write-Host "            Pass it with: doommake-tweak.ps1 -IwadPath 'D:\path\to\doom2.wad'" -ForegroundColor Red
+            Write-Host "            Continuing, but doommake steps may fail..." -ForegroundColor Yellow
+        }
+    }
+}
 
 # ============================================================================
 # STEP 1: Create Directories

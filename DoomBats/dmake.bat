@@ -4,14 +4,14 @@ setlocal EnableExtensions EnableDelayedExpansion
 rem ==============================================================================
 rem Editable IWAD paths
 rem ==============================================================================
-set "IWAD_doom=x:\_iwads\doom.wad"
-set "IWAD_doom2=x:\_iwads\doom2.wad"
-set "IWAD_tnt=x:\_iwads\tnt.wad"
-set "IWAD_plutonia=x:\_iwads\plutonia.wad"
-set "IWAD_heretic=x:\_iwads\heretic.wad"
-set "IWAD_hexen=x:\_iwads\hexen.wad"
-set "IWAD_free1=x:\_iwads\freedoom1.wad"
-set "IWAD_free2=x:\_iwads\freedoom2.wad"
+set "IWAD_doom=D:\Projects\DoomProjects\_SourcePorts\_iwads\doom.wad"
+set "IWAD_doom2=D:\Projects\DoomProjects\_SourcePorts\_iwads\doom2.wad"
+set "IWAD_tnt=D:\Projects\DoomProjects\_SourcePorts\_iwads\tnt.wad"
+set "IWAD_plutonia=D:\Projects\DoomProjects\_SourcePorts\_iwads\plutonia.wad"
+set "IWAD_heretic=D:\Projects\DoomProjects\_SourcePorts\_iwads\heretic.wad"
+set "IWAD_hexen=D:\Projects\DoomProjects\_SourcePorts\_iwads\hexen.wad"
+set "IWAD_free1=D:\Projects\DoomProjects\_SourcePorts\_iwads\freedoom1.wad"
+set "IWAD_free2=D:\Projects\DoomProjects\_SourcePorts\_iwads\freedoom2.wad"
 
 rem ==============================================================================
 rem dmake.bat
@@ -158,7 +158,7 @@ if defined DIR_NAME (
 
 (echo %PROJECT_NAME%&echo %IWAD_PATH%&echo dsdhacked)|doommake --project-type wad "./" -n assets maps decohack texturesboom
 set "CREATE_ERR=%ERRORLEVEL%"
-call doommake-tweak
+call doommake-tweak -IwadPath "%IWAD_PATH%"
 if defined DIR_NAME (
     endlocal & cd /d "%DIR_NAME%" & exit /b %CREATE_ERR%
 )

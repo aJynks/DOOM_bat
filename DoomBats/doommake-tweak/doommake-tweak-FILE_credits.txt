@@ -1,30 +1,29 @@
 ╔════════════════════════════════════════════════╗
 ║                PROJECT CREDITS                 ║
 ╚════════════════════════════════════════════════╝
+ Created by : aJynksed Doomer
+
+/================================================\
+||   LICENSE : Creative Commons Zero (CC0)      ||
+\================================================/
+ This software is released into the public domain.
+
+ You may copy, modify, publish, use, sell, or
+ distribute it in source or compiled form,
+ for any purpose, commercial or non-commercial.
+
+ Please credit me if you use it in your projects.
+
+ Provided "as is", without warranty of any kind.
 
 /================================================\
 ||     MAJOR DOOM COMMUNITY SOFTWARE USED       ||
 \================================================/
-
-- DoomTools
-  https://mtrop.github.io/DoomTools/
-  
-- SLADE
-  https://slade.mancubus.net/index.php?page=downloads
-
-- Ultimate Doom Builder
-  https://ultimatedoombuilder.github.io/
-
-
-/================================================\
-||        PALETTE TRANSLATION STRINGS           ||
-\================================================/
-- Colourful Hell v1.04
-  https://forum.zdoom.org/viewtopic.php?t=47980
-
-
-/================================================\
-||            Special Thanks                    ||
-\================================================/
-- WASDBjohn
-  * DECOHack advice and guidance
+ - DoomTools
+   https://mtrop.github.io/DoomTools/
+ 
+ - SLADE
+   https://slade.mancubus.net/index.php?page=downloads
+ 
+ - Ultimate Doom Builder
+   https://ultimatedoombuilder.github.io/
