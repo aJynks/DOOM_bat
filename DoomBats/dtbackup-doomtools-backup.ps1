@@ -14,6 +14,9 @@ param(
     [string]$force = "",
     
     [Parameter()]
+    [string]$iwad = "",
+    
+    [Parameter()]
     [switch]$fresh,
     
     [Parameter()]
@@ -27,10 +30,20 @@ param(
 )
 
 # ============================================================================
-# CONFIGURATION - Edit this path to point to your IWAD file
-# You can use Windows-style backslashes or forward slashes
+# IWAD CONFIGURATION - Available IWADs
 # ============================================================================
-$IWAD_PATH = "d:\Project\DoomProjects\_SourcePorts\_iwads\doom2.wad"
+$IWAD_BASE_PATH = "d:\Projects\DoomProjects\_SourcePorts\_iwads"
+$IWADS = @{
+    "doom"     = "$IWAD_BASE_PATH\doom.wad"
+    "doom2"    = "$IWAD_BASE_PATH\doom2.wad"
+    "tnt"      = "$IWAD_BASE_PATH\tnt.wad"
+    "plutonia" = "$IWAD_BASE_PATH\plutonia.wad"
+    "heretic"  = "$IWAD_BASE_PATH\heretic.wad"
+    "hexen"    = "$IWAD_BASE_PATH\hexen.wad"
+    "free1"    = "$IWAD_BASE_PATH\freedoom1.wad"
+    "free2"    = "$IWAD_BASE_PATH\freedoom2.wad"
+}
+$DEFAULT_IWAD = "doom2"
 # ============================================================================
 
 $CONFIG_FILE = ".doomProject_backup.conf"
@@ -58,6 +71,8 @@ function Show-Help {
     Write-Host "BACKUP OPTIONS:" -ForegroundColor Yellow
     Write-Host "  -path <directory>   " -NoNewline -ForegroundColor Green
     Write-Host "Set backup directory (first-time backup only)"
+    Write-Host "  -iwad <key>         " -NoNewline -ForegroundColor Green
+    Write-Host "Select IWAD (doom, doom2, tnt, plutonia, heretic, hexen, free1, free2)"
     Write-Host "  -force <directory>  " -NoNewline -ForegroundColor Green
     Write-Host "Override backup path, dumb copy (ignore hashes)"
     Write-Host "  -dumbcopy           " -NoNewline -ForegroundColor Green
@@ -77,6 +92,11 @@ function Show-Help {
     Write-Host "  First-time backup (creates config file):" -ForegroundColor Gray
     Write-Host "    dtbackup -path " -NoNewline -ForegroundColor White
     Write-Host '"d:\Backups\MyProject"' -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  First-time backup with TNT.WAD:" -ForegroundColor Gray
+    Write-Host "    dtbackup -path " -NoNewline -ForegroundColor White
+    Write-Host '"d:\Backups\MyProject"' -NoNewline -ForegroundColor Cyan
+    Write-Host " -iwad tnt" -ForegroundColor White
     Write-Host ""
     Write-Host "  Subsequent backups (uses saved config):" -ForegroundColor Gray
     Write-Host "    dtbackup" -ForegroundColor White
@@ -152,6 +172,7 @@ function Read-Config {
     
     $config = @{
         BackupPath = ""
+        IwadKey = ""
         FileHashes = @{}
     }
     
@@ -178,6 +199,9 @@ function Read-Config {
             if ($line.StartsWith("Path=")) {
                 $config.BackupPath = $line.Substring(5).Trim()
             }
+            elseif ($line.StartsWith("IwadKey=")) {
+                $config.IwadKey = $line.Substring(8).Trim()
+            }
         }
         else {
             if ($line -match "^(.+?)=(.+)$") {
@@ -192,6 +216,7 @@ function Read-Config {
 function Write-Config {
     param(
         [string]$BackupPath,
+        [string]$IwadKey,
         [hashtable]$FileHashes
     )
     
@@ -201,6 +226,7 @@ function Write-Config {
 
 [BackupPath]
 Path=$BackupPath
+IwadKey=$IwadKey
 
 [FileHashes]
 "@
@@ -270,16 +296,28 @@ function Find-DoomToolsProjects {
 }
 
 function Update-DoomToolsIwadPaths {
-    param([string[]]$ProjectPaths)
+    param(
+        [string[]]$ProjectPaths,
+        [string]$IwadKey
+    )
     
     if ($ProjectPaths.Count -eq 0) {
         return
     }
     
+    # Get the IWAD path for the selected key
+    if (-not $IWADS.ContainsKey($IwadKey)) {
+        Write-Host ""
+        Write-Host "WARNING: Invalid IWAD key '$IwadKey', using default" -ForegroundColor Yellow
+        $IwadKey = $DEFAULT_IWAD
+    }
+    
+    $iwadPath = $IWADS[$IwadKey]
+    $iwadPathFormatted = $iwadPath -replace '\\', '/'
+    
     Write-Host ""
     Write-Host "Updating IWAD paths in DoomTools projects..." -ForegroundColor Cyan
-    
-    $iwadPathFormatted = $IWAD_PATH -replace '\\', '/'
+    Write-Host "  Using IWAD: $IwadKey ($iwadPathFormatted)" -ForegroundColor Gray
     
     foreach ($projectPath in $ProjectPaths) {
         $relativePath = $projectPath.Substring((Get-Location).Path.Length + 1)
@@ -317,6 +355,7 @@ function Invoke-Backup {
     param(
         [string]$PathOverride = "",
         [string]$ForceOverride = "",
+        [string]$IwadSelection = "",
         [bool]$DumbCopy = $false,
         [bool]$CleanBackup = $false
     )
@@ -324,6 +363,30 @@ function Invoke-Backup {
     $config = Read-Config
     $backupPath = ""
     $useDumbCopy = $DumbCopy
+    $iwadKey = ""
+    
+    # Determine IWAD to use
+    if ($IwadSelection -ne "") {
+        # User specified an IWAD
+        if ($IWADS.ContainsKey($IwadSelection.ToLower())) {
+            $iwadKey = $IwadSelection.ToLower()
+        }
+        else {
+            Write-Host ""
+            Write-Host "ERROR: Unknown IWAD '$IwadSelection'" -ForegroundColor Red
+            Write-Host "Valid options: $($IWADS.Keys -join ', ')" -ForegroundColor Yellow
+            Write-Host ""
+            exit 1
+        }
+    }
+    elseif ($config -ne $null -and $config.IwadKey -ne "") {
+        # Use IWAD from config
+        $iwadKey = $config.IwadKey
+    }
+    else {
+        # Use default
+        $iwadKey = $DEFAULT_IWAD
+    }
     
     # Determine backup path and mode
     if ($ForceOverride -ne "") {
@@ -345,6 +408,7 @@ function Invoke-Backup {
         # -path specified: create config, do smart backup
         $backupPath = Normalize-Path $PathOverride
         Write-Host "Creating new backup configuration..." -ForegroundColor Cyan
+        Write-Host "Using IWAD: $iwadKey" -ForegroundColor Cyan
     }
     else {
         # Config exists
@@ -462,8 +526,8 @@ function Invoke-Backup {
             if ($destDir) {
                 if (-not (Test-Path -LiteralPath $destDir)) {
                     try {
-                        # Create directory using absolute path
-                        $null = New-Item -ItemType Directory -Path $destDir -Force -ErrorAction Stop
+                        # Create all parent directories
+                        $null = [System.IO.Directory]::CreateDirectory($destDir)
                     }
                     catch {
                         Write-Host "  [ERROR] Failed to create directory for: $file" -ForegroundColor Red
@@ -497,7 +561,20 @@ function Invoke-Backup {
     # Update config file
     Write-Host ""
     Write-Host "Updating configuration file..." -ForegroundColor Cyan
-    Write-Config -BackupPath $backupPath -FileHashes $newHashes
+    Write-Config -BackupPath $backupPath -IwadKey $iwadKey -FileHashes $newHashes
+    
+    # Copy config file to backup
+    $configSource = Join-Path "." $CONFIG_FILE
+    $configDest = Join-Path $backupPath $CONFIG_FILE
+    if (Test-Path -LiteralPath $configSource) {
+        try {
+            Copy-Item -LiteralPath $configSource -Destination $configDest -Force
+            Write-Host "Copied configuration file to backup" -ForegroundColor Cyan
+        }
+        catch {
+            Write-Host "WARNING: Failed to copy config file to backup" -ForegroundColor Yellow
+        }
+    }
     
     # Clean backup directory if -clean flag is set
     if ($CleanBackup) {
@@ -758,7 +835,8 @@ function Invoke-Restore {
             if ($destDir) {
                 if (-not (Test-Path -LiteralPath $destDir)) {
                     try {
-                        $null = New-Item -ItemType Directory -Path $destDir -Force -ErrorAction Stop
+                        # Create all parent directories
+                        $null = [System.IO.Directory]::CreateDirectory($destDir)
                     }
                     catch {
                         Write-Host "  [ERROR] Failed to create directory for: $relativePath" -ForegroundColor Red
@@ -790,7 +868,14 @@ function Invoke-Restore {
     # Search for DoomTools projects and update IWAD paths
     $currentDir = (Get-Location).Path
     $doomToolsProjects = Find-DoomToolsProjects -SearchPath $currentDir
-    Update-DoomToolsIwadPaths -ProjectPaths $doomToolsProjects
+    
+    # Get IWAD key from config or use default
+    $iwadKey = $DEFAULT_IWAD
+    if ($config -ne $null -and $config.IwadKey -ne "") {
+        $iwadKey = $config.IwadKey
+    }
+    
+    Update-DoomToolsIwadPaths -ProjectPaths $doomToolsProjects -IwadKey $iwadKey
     
     # Summary
     Write-Host ""
@@ -943,7 +1028,7 @@ if ($action -eq "help" -or $action -eq "-h" -or $action -eq "-help" -or $action 
 
 switch ($action.ToLower()) {
     "backup" {
-        Invoke-Backup -PathOverride $path -ForceOverride $force -DumbCopy $dumbcopy -CleanBackup $clean
+        Invoke-Backup -PathOverride $path -ForceOverride $force -IwadSelection $iwad -DumbCopy $dumbcopy -CleanBackup $clean
     }
     "restore" {
         Invoke-Restore -RestorePath $restorepath -UseFresh $fresh
