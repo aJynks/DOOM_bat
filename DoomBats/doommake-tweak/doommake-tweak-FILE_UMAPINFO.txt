@@ -13,3 +13,43 @@ MAP MAP01
 	//episode = "M_EPI1", "EPISODE1_NAME", "1"
 	// Music:
 }
+
+/*
+Map 01 : D_RUNNIN
+Map 02 : D_STALKS
+Map 03 : D_COUNTD
+Map 04 : D_BETWEE
+Map 05 : D_DOOM
+Map 06 : D_THE_DA
+Map 07 : D_SHAWN
+Map 08 : D_DDTBLU
+Map 09 : D_IN_CIT
+Map 10 : D_DEAD
+Map 11 : D_STLKS2
+Map 12 : D_THEDA2
+Map 13 : D_DOOM2
+Map 14 : D_DDTBL2
+Map 15 : D_RUNNI2
+Map 16 : D_DEAD2
+Map 17 : D_STLKS3
+Map 18 : D_ROMERO
+Map 19 : D_SHAWN
+Map 20 : D_MESSAG
+Map 21 : D_COUNT2
+Map 22 : D_DDTBL3
+Map 23 : D_AMPIE
+Map 24 : D_THEDA3
+Map 25 : D_ADRIAN
+Map 26 : D_MESSAG
+Map 27 : D_ROMER2
+Map 28 : D_TENSE
+Map 29 : D_SHAWN3
+Map 30 : D_OPENIN
+Map 31 : D_EVIL
+Map 32 : D_ULTIMA
+Map 33 : D_READ_M (xbox)
+Title Music : D_DM2TTL
+Text Screen Music : D_READ_M
+Intermission Music : D_DM2INT
+Cast Sequence : D_EVIL
+*/

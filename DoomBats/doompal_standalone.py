@@ -1045,6 +1045,24 @@ def cmd_batch(args):
         colormap_to_png(colormap, palette, colormap_path)
         outputs["COLORMAP"] = colormap_path
         
+        # 4a. Generate blank PLAYPAL (all 14 rows same as pal0, no tints)
+        print("Generating blank PLAYPAL...")
+        blank_playpal_path = Path(f"{output_base}_playpal-blank.png")
+        img_blank = Image.new("RGB", (COLORS, 14))
+        px_blank = img_blank.load()
+        for row in range(14):
+            for col in range(COLORS):
+                px_blank[col, row] = palette[col]
+        img_blank.save(blank_playpal_path)
+        outputs["Blank PLAYPAL"] = blank_playpal_path
+
+        # 4b. Generate blank COLORMAP (no lighting)
+        print("Generating blank colormap...")
+        blank_colormap_path = Path(f"{output_base}_colormap-blank.png")
+        blank_colormap = generate_colormap(palette, with_lighting=False)
+        colormap_to_png(blank_colormap, palette, blank_colormap_path)
+        outputs["Blank COLORMAP"] = blank_colormap_path
+
         # 4. Generate transparent tint split overlay
         print("Generating tint split overlay...")
         split_path = Path(f"{output_base}_split.png")

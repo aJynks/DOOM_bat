@@ -25,20 +25,16 @@ rem       Ignore all other arguments
 rem   - If ANY argument is "create":
 rem       Enter create mode (standalone)
 rem       Ignore all other arguments
-rem   - If ANY argument is "explode":
-rem       Enter explode mode (standalone)
-rem       Ignore all other arguments
 rem   - Arguments before "--" are passed to doommake
 rem   - If "--" is present, doom.bat is run after doommake
 rem   - Arguments after "--" are passed to doom.bat
 rem   - If doommake returns non-zero, doom.bat will NOT run
 rem ==============================================================================
 
-rem ---- Scan ALL arguments for "update", "create", or "explode" ------------------
+rem ---- Scan ALL arguments for "update" or "create" ------------------------------
 for %%A in (%*) do (
     if /I "%%~A"=="update" goto do_update
     if /I "%%~A"=="create" goto do_create
-    if /I "%%~A"=="explode" goto do_explode
 )
 
 rem ---- Help triggers ------------------------------------------------------------
@@ -170,65 +166,6 @@ if defined DIR_NAME (
 endlocal & exit /b %CREATE_ERR%
 
 
-:do_explode
-rem ---- Explode mode (standalone) ------------------------------------------------
-set "EXPLODE_WAD="
-set "IWAD_NAME=doom2"
-
-rem Move past the word "explode"
-:skip_explode_word
-shift
-if "%~1"=="" (
-    echo Error: WAD filename required
-    echo Usage: dmake explode filename.wad [-i iwad]
-    exit /b 2
-)
-
-set "EXPLODE_WAD=%~1"
-shift
-
-:parse_explode_loop
-if "%~1"=="" goto execute_explode
-
-if /I "%~1"=="-i" (
-    if "%~2"=="" (
-        echo Error: -i requires an IWAD name
-        exit /b 2
-    )
-    set "IWAD_NAME=%~2"
-    shift
-    shift
-    goto parse_explode_loop
-)
-
-rem Unknown argument - skip it
-shift
-goto parse_explode_loop
-
-:execute_explode
-set "IWAD_PATH=!IWAD_%IWAD_NAME%!"
-
-rem Strip extension from WAD filename to build project name
-for %%F in ("%EXPLODE_WAD%") do set "EXPLODE_STEM=%%~nF"
-set "EXPLODE_PROJECT=_%EXPLODE_STEM%"
-
-echo I am in explode mode
-echo.
-echo WAD File     : %EXPLODE_WAD%
-echo Project Name : %EXPLODE_PROJECT%
-echo IWAD Path    : %IWAD_PATH%
-echo.
-
-if "%IWAD_PATH%"=="" (
-    echo Error: IWAD path not found for: %IWAD_NAME%
-    echo Available IWADs: doom, doom2, tnt, plutonia, heretic, hexen, free1, free2
-    exit /b 2
-)
-
-(echo %EXPLODE_STEM%&echo %IWAD_PATH%&echo dsdhacked)|doommake %EXPLODE_PROJECT% --convert-palette "%IWAD_PATH%" --convert --explode "%EXPLODE_WAD%"
-endlocal & exit /b %ERRORLEVEL%
-
-
 :help
 echo.
 echo ==============================================================================
@@ -252,14 +189,10 @@ echo.
 echo     If ANY argument is "create", ALL other arguments are ignored and:
 echo       create mode is entered
 echo.
-echo     If ANY argument is "explode", ALL other arguments are ignored and:
-echo       explode mode is entered
-echo.
 echo USAGE
 echo   dmake [doommake_args...] [-- [doom_args...]]
 echo   dmake update
 echo   dmake create ProjectName [-i iwad] [-d folder]
-echo   dmake explode filename.wad [-i iwad]
 echo.
 echo CREATE MODE OPTIONS
 echo   ProjectName              Name of the project to create
@@ -268,18 +201,10 @@ echo                            Options: doom, doom2, tnt, plutonia, heretic,
 echo                                     hexen, free1, free2
 echo   -d folder                Directory to create project in (optional)
 echo.
-echo EXPLODE MODE OPTIONS
-echo   filename.wad             WAD file to explode
-echo   -i iwad                  IWAD to use (default: doom2)
-echo                            Options: doom, doom2, tnt, plutonia, heretic,
-echo                                     hexen, free1, free2
-echo.
 echo EXAMPLES
 echo   dmake create MyWAD
 echo   dmake create MyWAD -i doom -d projects
 echo   dmake create TestWAD -d "_01"
-echo   dmake explode summoner.wad
-echo   dmake explode summoner.wad -i tnt
 echo   dmake -- -skill 4 -warp 1
 echo   dmake update
 echo.

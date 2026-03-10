@@ -71,7 +71,7 @@ function Show-Help {
     Write-HeaderLine "==============================================================================="
 
     Write-SectionHeader "USAGE"
-    Write-Host "  doom [PORT] [IWAD] [PAK...] [OPTIONS...] [--add PAK...]" -ForegroundColor White
+    Write-Host "  doom [PORT] [IWAD] [PAK...] [OPTIONS...]" -ForegroundColor White
     Write-Host ""
     Write-Host "  Examples:" -ForegroundColor Gray
     Write-Host "    doom" -ForegroundColor Gray
@@ -80,8 +80,6 @@ function Show-Help {
     Write-Host "    doom pak1" -ForegroundColor Gray
     Write-Host "    doom dsda doom2 pak1 -warp 2 -skill 4" -ForegroundColor Gray
     Write-Host "    doom -warp 7                 (uses default skill from doom-loader.conf in project dirs)" -ForegroundColor Gray
-    Write-Host "    doom pak1 --add pak2          (pak1 loads first, pak2 loads LAST)" -ForegroundColor Gray
-    Write-Host "    doom -warp 5 -nosound pak1 --add pak3 pak6" -ForegroundColor Gray
 
     Write-SectionHeader "WHAT THIS SCRIPT DOES"
     Write-Host "  Launcher wrapper that:" -ForegroundColor White
@@ -117,15 +115,10 @@ function Show-Help {
     Write-Host "  Paks expand into a list of WAD paths that are loaded FIRST." -ForegroundColor White
     Write-Host "  Then the folder-selected WAD (normal mode) OR project release WAD (DoomMake mode)." -ForegroundColor White
     Write-Host ""
-    Write-Host "  --add <pak> loads paks at the VERY END of the -file list instead." -ForegroundColor White
-    Write-Host "  You can chain multiple pak names after --add." -ForegroundColor White
-    Write-Host ""
     Write-Host "  Example:" -ForegroundColor Gray
-    Write-Host "    doom pak1 --add pak2" -ForegroundColor Gray
-    Write-Host "  Becomes:" -ForegroundColor Gray
-    Write-Host "    -file <pak1 wads...> <auto/project wad> <pak2 wads...>" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "  doom --listpaks    (prints all defined pak names and exits)" -ForegroundColor White
+    Write-Host "    doom pak1" -ForegroundColor Gray
+    Write-Host "  Conceptually becomes:" -ForegroundColor Gray
+    Write-Host "    -file <pak1 wad #1> <pak1 wad #2> <auto/menu or project wad>" -ForegroundColor Gray
 
     Write-SectionHeader "DOOMMAKE PROJECT MODE"
     Write-Host "  A DoomMake project is detected when ALL of these exist in the current folder:" -ForegroundColor White
@@ -178,8 +171,6 @@ function Show-Help {
     Write-Host "  doom --help" -ForegroundColor Gray
     Write-Host "  doom -h" -ForegroundColor Gray
     Write-Host "  doom /?" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "  doom --listpaks    (list all defined pak names)" -ForegroundColor Gray
 
     Write-Host ""
     Write-HeaderLine "===============================================================================" 
@@ -196,29 +187,6 @@ foreach ($a in $command_raw) {
 }
 if ($wantsHelp) {
     Show-Help
-    exit
-}
-
-#-------------------------------------------------------------------------------------------------
-# --listpaks switch (early exit)
-
-$listPaksTokens = @("--listpaks", "-listpaks", "/listpaks")
-$wantsListPaks = $false
-foreach ($a in $command_raw) {
-    if ($listPaksTokens -icontains $a) { $wantsListPaks = $true; break }
-}
-if ($wantsListPaks) {
-    Write-Host ""
-    Write-Host ("== Defined Paks ==") -ForegroundColor Yellow
-    if ($pak.Count -eq 0) {
-        Write-Host "  (none defined)" -ForegroundColor Gray
-    } else {
-        foreach ($key in ($pak.Keys | Sort-Object)) {
-            $wadCount = $pak[$key].Count
-            Write-Host ("  " + $key + "  (" + $wadCount + " WAD" + $(if ($wadCount -ne 1) { "s" } else { "" }) + ")") -ForegroundColor Cyan
-        }
-    }
-    Write-Host ""
     exit
 }
 
@@ -595,14 +563,9 @@ if ($hasDoomMakeProject) {
 
     $filteredArgs = @()
     $pakWads = @()
-    $addPakWads = @()
     $usedPakNames = @()
-    $inAddMode = $false
 
     foreach ($arg in $command_raw) {
-
-        # --add switch: everything after this that is a pak name goes to the tail list
-        if ($arg -ieq "--add") { $inAddMode = $true; continue }
 
         # swallow 'menu' token so ports never see it as a filename/arg
         if ($null -ne $arg -and $arg.ToString().ToLowerInvariant() -eq "menu") {
@@ -622,23 +585,21 @@ if ($hasDoomMakeProject) {
         }
 
         if ($pak.ContainsKey($arg)) {
+            $usedPakNames += $arg
             if ($pak[$arg].Count -eq 0) {
                 Show-BoxedError @(
                     "-- Error : Pak <$arg> contains no WADs --"
                 )
                 exit 1
             }
-            if ($inAddMode) {
-                foreach ($p in $pak[$arg]) { $addPakWads += $p }
-            } else {
-                $usedPakNames += $arg
-                foreach ($p in $pak[$arg]) { $pakWads += $p }
-            }
+            foreach ($p in $pak[$arg]) { $pakWads += $p }
             continue
         }
 
         $filteredArgs += $arg
-    } # override whatever the defaults were
+    }
+
+    # In DoomMake mode, IWAD comes from doom-loader.conf (override whatever the defaults were)
     if (-not [string]::IsNullOrWhiteSpace($loader.iwad)) {
         $usediWad = $loader.iwad
         $usedIwadName = "conf"
@@ -651,10 +612,6 @@ if ($hasDoomMakeProject) {
     for ($i = 0; $i -lt $pakWads.Count; $i++) {
         $name = ("{0}#{1}" -f ($usedPakNames -join "+"), ($i + 1))
         Validate-Path $pakWads[$i] "Pak WAD" $name
-    }
-
-    for ($i = 0; $i -lt $addPakWads.Count; $i++) {
-        Validate-Path $addPakWads[$i] "Add-Pak WAD" ("add#" + ($i + 1))
     }
 
     # Resolve loader paths relative to current directory
@@ -679,12 +636,11 @@ if ($hasDoomMakeProject) {
         }
     }
 
-    # Build -file list: pak(s) first, then release, then (optional) dehacked, then --add pak(s) last
+    # Build -file list: pak(s) first, then release, then (optional) dehacked
     $fileList = @()
     if ($pakWads.Count -gt 0) { $fileList += $pakWads }
     $fileList += $releasePath
     if ($dehackedPath -ne $null) { $fileList += $dehackedPath }
-    if ($addPakWads.Count -gt 0) { $fileList += $addPakWads }
 
     if ($menuMode) {
         # strip any CLI warp/skill if present
@@ -727,14 +683,9 @@ $usediWad = $iwads[$usedIwadName]
 
 $filteredArgs = @()
 $pakWads = @()
-$addPakWads = @()
 $usedPakNames = @()
-$inAddMode = $false
 
 foreach ($arg in $command_raw) {
-
-    # --add switch: everything after this that is a pak name goes to the tail list
-    if ($arg -ieq "--add") { $inAddMode = $true; continue }
 
     if ($iwads.ContainsKey($arg)) {
         $usediWad = $iwads[$arg]
@@ -749,18 +700,14 @@ foreach ($arg in $command_raw) {
     }
 
     if ($pak.ContainsKey($arg)) {
+        $usedPakNames += $arg
         if ($pak[$arg].Count -eq 0) {
             Show-BoxedError @(
                 "-- Error : Pak <$arg> contains no WADs --"
             )
             exit 1
         }
-        if ($inAddMode) {
-            foreach ($p in $pak[$arg]) { $addPakWads += $p }
-        } else {
-            $usedPakNames += $arg
-            foreach ($p in $pak[$arg]) { $pakWads += $p }
-        }
+        foreach ($p in $pak[$arg]) { $pakWads += $p }
         continue
     }
 
@@ -774,10 +721,6 @@ Validate-Path $usediWad "IWAD"        $usedIwadName
 for ($i = 0; $i -lt $pakWads.Count; $i++) {
     $name = ("{0}#{1}" -f ($usedPakNames -join "+"), ($i + 1))
     Validate-Path $pakWads[$i] "Pak WAD" $name
-}
-
-for ($i = 0; $i -lt $addPakWads.Count; $i++) {
-    Validate-Path $addPakWads[$i] "Add-Pak WAD" ("add#" + ($i + 1))
 }
 
 # WAD detection / selection (current directory)
@@ -799,11 +742,10 @@ elseif ($wadFiles.Count -gt 1) {
 }
 
 # Launch
-if ($pakWads.Count -gt 0 -or $null -ne $wadFullPath -or $addPakWads.Count -gt 0) {
+if ($pakWads.Count -gt 0 -or $null -ne $wadFullPath) {
     $fileList = @()
     if ($pakWads.Count -gt 0) { $fileList += $pakWads }
     if ($null -ne $wadFullPath) { $fileList += $wadFullPath }
-    if ($addPakWads.Count -gt 0) { $fileList += $addPakWads }
 
     # KEX-only: append -skipmovies at the END of the final command args
     $filteredArgs = Ensure-KexSkipMovies -PortName $usedPortName -ArgsList $filteredArgs

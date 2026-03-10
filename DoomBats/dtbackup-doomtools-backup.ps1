@@ -2,7 +2,7 @@
 
 param(
     [Parameter(Position=0)]
-    [string]$action = "backup",
+    [string]$action = "",
     
     [Parameter(Position=1)]
     [string]$restorepath = "",
@@ -11,26 +11,32 @@ param(
     [string]$path = "",
     
     [Parameter()]
-    [string]$force = "",
-    
-    [Parameter()]
     [string]$iwad = "",
     
     [Parameter()]
     [switch]$fresh,
     
     [Parameter()]
-    [switch]$dumbcopy,
+    [switch]$reset,
     
     [Parameter()]
-    [switch]$clean,
+    [switch]$local,
     
     [Parameter()]
-    [switch]$verify
+    [switch]$server,
+    
+    [Parameter()]
+    [switch]$v,
+    
+    [Parameter()]
+    [switch]$h,
+    
+    [Parameter()]
+    [switch]$helpfull
 )
 
 # ============================================================================
-# IWAD CONFIGURATION - Available IWADs
+# IWAD CONFIGURATION
 # ============================================================================
 $IWAD_BASE_PATH = "d:\Projects\DoomProjects\_SourcePorts\_iwads"
 $IWADS = @{
@@ -51,8 +57,20 @@ $DOOMTOOLS_REQUIRED_FILES = @("doommake.properties", "doommake.project.propertie
 
 function Show-Help {
     Write-Host ""
+    Write-Host "dtbackup v3 - Commands:" -ForegroundColor Cyan
+    Write-Host "  dtbackup backup [-path <dir>] [-iwad <key>] [-reset] [-v]" -ForegroundColor White
+    Write-Host "  dtbackup restore [-fresh] [<dir>]" -ForegroundColor White
+    Write-Host "  dtbackup sync -local | -server" -ForegroundColor White
+    Write-Host ""
+    Write-Host "Use 'dtbackup -helpfull' for detailed options and examples" -ForegroundColor Gray
+    Write-Host ""
+    exit 0
+}
+
+function Show-HelpFull {
+    Write-Host ""
     Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "  Project Backup & Restore Utility" -ForegroundColor Cyan
+    Write-Host "  Project Backup & Restore Utility v3" -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "USAGE:" -ForegroundColor Yellow
@@ -63,8 +81,8 @@ function Show-Help {
     Write-Host "Backup the current project directory"
     Write-Host "  restore             " -NoNewline -ForegroundColor Green
     Write-Host "Restore project from backup"
-    Write-Host "  verify              " -NoNewline -ForegroundColor Green
-    Write-Host "Verify local files against backup"
+    Write-Host "  sync                " -NoNewline -ForegroundColor Green
+    Write-Host "Synchronize local and server (requires -local or -server)"
     Write-Host "  help                " -NoNewline -ForegroundColor Green
     Write-Host "Show this help message"
     Write-Host ""
@@ -73,23 +91,27 @@ function Show-Help {
     Write-Host "Set backup directory (first-time backup only)"
     Write-Host "  -iwad <key>         " -NoNewline -ForegroundColor Green
     Write-Host "Select IWAD (doom, doom2, tnt, plutonia, heretic, hexen, free1, free2)"
-    Write-Host "  -force <directory>  " -NoNewline -ForegroundColor Green
-    Write-Host "Override backup path, dumb copy (ignore hashes)"
-    Write-Host "  -dumbcopy           " -NoNewline -ForegroundColor Green
-    Write-Host "Copy all files regardless of hash changes"
-    Write-Host "  -clean              " -NoNewline -ForegroundColor Green
-    Write-Host "Delete files/folders in backup that don't exist in source"
+    Write-Host "  -reset              " -NoNewline -ForegroundColor Green
+    Write-Host "Delete backup directory contents before copying"
+    Write-Host "  -v                  " -NoNewline -ForegroundColor Green
+    Write-Host "Verbose mode - show all robocopy output"
     Write-Host ""
     Write-Host "RESTORE OPTIONS:" -ForegroundColor Yellow
     Write-Host "  -fresh              " -NoNewline -ForegroundColor Green
-    Write-Host "Clean directory, copy all files from config path"
+    Write-Host "Clean directory, then restore from config path"
     Write-Host "  -fresh <directory>  " -NoNewline -ForegroundColor Green
-    Write-Host "Clean directory, copy all files from specified path"
+    Write-Host "Clean directory, then restore from specified path"
     Write-Host "  <directory>         " -NoNewline -ForegroundColor Green
     Write-Host "Restore from path (empty directory only)"
     Write-Host ""
-    Write-Host "BACKUP EXAMPLES:" -ForegroundColor Yellow
-    Write-Host "  First-time backup (creates config file):" -ForegroundColor Gray
+    Write-Host "SYNC OPTIONS:" -ForegroundColor Yellow
+    Write-Host "  -local              " -NoNewline -ForegroundColor Green
+    Write-Host "Mirror local to server (backup)"
+    Write-Host "  -server             " -NoNewline -ForegroundColor Green
+    Write-Host "Mirror server to local (restore + clean)"
+    Write-Host ""
+    Write-Host "EXAMPLES:" -ForegroundColor Yellow
+    Write-Host "  First-time backup:" -ForegroundColor Gray
     Write-Host "    dtbackup -path " -NoNewline -ForegroundColor White
     Write-Host '"d:\Backups\MyProject"' -ForegroundColor Cyan
     Write-Host ""
@@ -98,71 +120,41 @@ function Show-Help {
     Write-Host '"d:\Backups\MyProject"' -NoNewline -ForegroundColor Cyan
     Write-Host " -iwad tnt" -ForegroundColor White
     Write-Host ""
-    Write-Host "  Subsequent backups (uses saved config):" -ForegroundColor Gray
-    Write-Host "    dtbackup" -ForegroundColor White
+    Write-Host "  Subsequent backup (uses saved config):" -ForegroundColor Gray
+    Write-Host "    dtbackup backup" -ForegroundColor White
     Write-Host ""
-    Write-Host "  Force backup to different location (dumb copy):" -ForegroundColor Gray
-    Write-Host "    dtbackup -force " -NoNewline -ForegroundColor White
-    Write-Host '"d:\TempBackup\MyProject"' -ForegroundColor Cyan
+    Write-Host "  Backup with verbose output:" -ForegroundColor Gray
+    Write-Host "    dtbackup backup -v" -ForegroundColor White
     Write-Host ""
-    Write-Host "  Backup everything regardless of changes:" -ForegroundColor Gray
-    Write-Host "    dtbackup -dumbcopy" -ForegroundColor White
+    Write-Host "  Reset backup (delete and recopy everything):" -ForegroundColor Gray
+    Write-Host "    dtbackup backup -reset" -ForegroundColor White
     Write-Host ""
-    Write-Host "  Backup and remove files from backup not in source:" -ForegroundColor Gray
-    Write-Host "    dtbackup -clean" -ForegroundColor White
-    Write-Host ""
-    Write-Host "RESTORE EXAMPLES:" -ForegroundColor Yellow
-    Write-Host "  Smart restore (skip unchanged files):" -ForegroundColor Gray
-    Write-Host "    dtbackup restore" -ForegroundColor White
-    Write-Host ""
-    Write-Host "  Fresh restore from config (clean + copy all):" -ForegroundColor Gray
+    Write-Host "  Restore from saved config:" -ForegroundColor Gray
     Write-Host "    dtbackup restore -fresh" -ForegroundColor White
     Write-Host ""
-    Write-Host "  Fresh restore from different location:" -ForegroundColor Gray
+    Write-Host "  Restore from specific path:" -ForegroundColor Gray
     Write-Host "    dtbackup restore -fresh " -NoNewline -ForegroundColor White
     Write-Host '"d:\Backups\MyProject"' -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  Restore into empty directory:" -ForegroundColor Gray
-    Write-Host "    dtbackup restore " -NoNewline -ForegroundColor White
-    Write-Host '"d:\Backups\MyProject"' -ForegroundColor Cyan
+    Write-Host "  Sync local to server (make backup match local):" -ForegroundColor Gray
+    Write-Host "    dtbackup sync -local" -ForegroundColor White
     Write-Host ""
-    Write-Host "VERIFY EXAMPLE:" -ForegroundColor Yellow
-    Write-Host "  Compare local files with backup:" -ForegroundColor Gray
-    Write-Host "    dtbackup verify" -ForegroundColor White
+    Write-Host "  Sync server to local (make local match backup):" -ForegroundColor Gray
+    Write-Host "    dtbackup sync -server" -ForegroundColor White
     Write-Host ""
     Write-Host "NOTES:" -ForegroundColor Yellow
-    Write-Host "  - Hash-based change detection skips unchanged files" -ForegroundColor Gray
+    Write-Host "  - Backup mirrors source to destination (removes extra files)" -ForegroundColor Gray
     Write-Host "  - Empty directories are preserved" -ForegroundColor Gray
-    Write-Host "  - IWAD paths automatically updated in DoomTools projects" -ForegroundColor Gray
-    Write-Host "  - doom-loader.conf and doommake.properties always copied" -ForegroundColor Gray
-    Write-Host "  - Supports special characters in filenames" -ForegroundColor Gray
+    Write-Host "  - IWAD paths automatically updated in DoomTools projects on restore" -ForegroundColor Gray
+    Write-Host "  - Uses robocopy for reliable Windows file copying" -ForegroundColor Gray
     Write-Host "  - Excludes .git directories from backup/restore" -ForegroundColor Gray
     Write-Host ""
     Write-Host "CONFIG FILE:" -ForegroundColor Yellow
     Write-Host "  .doomProject_backup.conf" -ForegroundColor Cyan
-    Write-Host "  - Contains backup path and file hashes" -ForegroundColor Gray
+    Write-Host "  - Stores backup path and IWAD selection" -ForegroundColor Gray
     Write-Host "  - Edit manually to change backup location permanently" -ForegroundColor Gray
-    Write-Host "  - Automatically backed up and restored" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "IWAD CONFIGURATION:" -ForegroundColor Yellow
-    Write-Host "  Edit " -NoNewline -ForegroundColor Gray
-    Write-Host "$" -NoNewline -ForegroundColor Cyan
-    Write-Host "IWAD_PATH" -NoNewline -ForegroundColor Cyan
-    Write-Host " at the top of doomtools-backup-v2.ps1" -ForegroundColor Gray
-    Write-Host "  This path is updated in all DoomTools projects after restore" -ForegroundColor Gray
     Write-Host ""
     exit 0
-}
-
-function Get-FileHashMD5 {
-    param([string]$FilePath)
-    try {
-        $hash = Get-FileHash -LiteralPath $FilePath -Algorithm MD5
-        return $hash.Hash
-    }
-    catch {
-        return $null
-    }
 }
 
 function Read-Config {
@@ -173,13 +165,11 @@ function Read-Config {
     $config = @{
         BackupPath = ""
         IwadKey = ""
-        FileHashes = @{}
     }
     
     $content = Get-Content $CONFIG_FILE -Raw
     $lines = $content -split "`r?`n"
     
-    $inHashSection = $false
     foreach ($line in $lines) {
         $line = $line.Trim()
         
@@ -187,26 +177,11 @@ function Read-Config {
             continue
         }
         
-        if ($line -eq "[BackupPath]") {
-            continue
+        if ($line.StartsWith("Path=")) {
+            $config.BackupPath = $line.Substring(5).Trim()
         }
-        elseif ($line -eq "[FileHashes]") {
-            $inHashSection = $true
-            continue
-        }
-        
-        if (-not $inHashSection) {
-            if ($line.StartsWith("Path=")) {
-                $config.BackupPath = $line.Substring(5).Trim()
-            }
-            elseif ($line.StartsWith("IwadKey=")) {
-                $config.IwadKey = $line.Substring(8).Trim()
-            }
-        }
-        else {
-            if ($line -match "^(.+?)=(.+)$") {
-                $config.FileHashes[$matches[1]] = $matches[2]
-            }
+        elseif ($line.StartsWith("IwadKey=")) {
+            $config.IwadKey = $line.Substring(8).Trim()
         }
     }
     
@@ -216,56 +191,31 @@ function Read-Config {
 function Write-Config {
     param(
         [string]$BackupPath,
-        [string]$IwadKey,
-        [hashtable]$FileHashes
+        [string]$IwadKey
     )
     
     $content = @"
 # Project Backup Configuration
 # Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 
-[BackupPath]
 Path=$BackupPath
 IwadKey=$IwadKey
-
-[FileHashes]
 "@
     
-    foreach ($file in ($FileHashes.Keys | Sort-Object)) {
-        $content += "`n$file=$($FileHashes[$file])"
-    }
-    
     Set-Content -Path $CONFIG_FILE -Value $content -Encoding UTF8
-}
-
-function Get-ProjectFiles {
-    $files = Get-ChildItem -Path "." -Recurse -File -Force | Where-Object {
-        $_.FullName -notmatch "\\\.git\\"
-    }
-    
-    $relativePaths = @()
-    $currentDir = (Get-Location).Path
-    
-    foreach ($file in $files) {
-        $relativePath = $file.FullName.Substring($currentDir.Length + 1)
-        $relativePaths += $relativePath
-    }
-    
-    return $relativePaths
 }
 
 function Normalize-Path {
     param([string]$Path)
     
-    # Remove any quotes that might have been escaped
     $Path = $Path.Trim('"')
     
     # Convert UNC forward slashes to backslashes
-    if ($Path -match "^//(.+)") {
-        $Path = "\\$($matches[1])"
+    if ($Path -match "^//") {
+        $Path = $Path -replace "^//", "\\"
+        $Path = $Path -replace "/", "\"
     }
     
-    # Remove trailing slashes/backslashes
     $Path = $Path.TrimEnd('\', '/')
     
     return $Path
@@ -305,7 +255,6 @@ function Update-DoomToolsIwadPaths {
         return
     }
     
-    # Get the IWAD path for the selected key
     if (-not $IWADS.ContainsKey($IwadKey)) {
         Write-Host ""
         Write-Host "WARNING: Invalid IWAD key '$IwadKey', using default" -ForegroundColor Yellow
@@ -351,23 +300,153 @@ function Update-DoomToolsIwadPaths {
     }
 }
 
+function Invoke-Sync {
+    param(
+        [bool]$SyncToLocal = $false,
+        [bool]$SyncToServer = $false
+    )
+    
+    if (-not $SyncToLocal -and -not $SyncToServer) {
+        Write-Host ""
+        Write-Host "ERROR: Must specify -local or -server for sync" -ForegroundColor Red
+        Write-Host ""
+        exit 1
+    }
+    
+    if ($SyncToLocal -and $SyncToServer) {
+        Write-Host ""
+        Write-Host "ERROR: Cannot specify both -local and -server" -ForegroundColor Red
+        Write-Host ""
+        exit 1
+    }
+    
+    $config = Read-Config
+    if ($config -eq $null) {
+        Write-Host ""
+        Write-Host "ERROR: No backup configuration found ($CONFIG_FILE)" -ForegroundColor Red
+        Write-Host "Run 'dtbackup backup -path <directory>' first" -ForegroundColor Yellow
+        Write-Host ""
+        exit 1
+    }
+    
+    $backupPath = $config.BackupPath
+    $currentDir = (Get-Location).Path
+    
+    if ($SyncToLocal) {
+        Write-Host ""
+        Write-Host "=== Sync to Local (Backup) ===" -ForegroundColor Green
+        Write-Host "Mirroring: Local → Server" -ForegroundColor Cyan
+        Write-Host "  Source: $currentDir" -ForegroundColor Gray
+        Write-Host "  Destination: $backupPath" -ForegroundColor Gray
+        Write-Host ""
+        
+        # This is the same as backup with /MIR
+        & robocopy $currentDir $backupPath /MIR /E /COPY:DAT /R:3 /W:5 /XD .git
+        $exitCode = $LASTEXITCODE
+        
+        if ($exitCode -ge 8) {
+            Write-Host ""
+            Write-Host "ERROR: Robocopy failed with exit code $exitCode" -ForegroundColor Red
+            Write-Host ""
+            exit 1
+        }
+        
+        Write-Host ""
+        Write-Host "Sync complete! Server now mirrors local." -ForegroundColor Green
+        Write-Host ""
+    }
+    else {
+        # Sync to server means: restore, then clean local
+        Write-Host ""
+        Write-Host "=== Sync to Server (Restore + Clean) ===" -ForegroundColor Green
+        Write-Host "Step 1: Copying from server to local" -ForegroundColor Cyan
+        Write-Host "  Source: $backupPath" -ForegroundColor Gray
+        Write-Host "  Destination: $currentDir" -ForegroundColor Gray
+        Write-Host ""
+        
+        # Restore files from server
+        & robocopy $backupPath $currentDir /E /COPY:DAT /R:3 /W:5
+        $exitCode = $LASTEXITCODE
+        
+        if ($exitCode -ge 8) {
+            Write-Host ""
+            Write-Host "ERROR: Robocopy failed with exit code $exitCode" -ForegroundColor Red
+            Write-Host ""
+            exit 1
+        }
+        
+        Write-Host ""
+        Write-Host "Step 2: Cleaning local (removing files not in server)" -ForegroundColor Yellow
+        
+        # Get all files/dirs in server
+        $serverFiles = @{}
+        $serverDirs = @()
+        
+        Get-ChildItem -LiteralPath $backupPath -Recurse -File -Force | ForEach-Object {
+            $relativePath = $_.FullName.Substring($backupPath.Length + 1)
+            $serverFiles[$relativePath] = $true
+        }
+        
+        Get-ChildItem -LiteralPath $backupPath -Recurse -Directory -Force | ForEach-Object {
+            $relativePath = $_.FullName.Substring($backupPath.Length + 1)
+            $serverDirs += $relativePath
+        }
+        
+        # Delete files in local not in server
+        $deletedFiles = 0
+        Get-ChildItem -Path $currentDir -Recurse -File -Force | ForEach-Object {
+            $relativePath = $_.FullName.Substring($currentDir.Length + 1)
+            if (-not $serverFiles.ContainsKey($relativePath)) {
+                Remove-Item -LiteralPath $_.FullName -Force
+                Write-Host "  [DELETED FILE] $relativePath" -ForegroundColor Red
+                $deletedFiles++
+            }
+        }
+        
+        # Delete directories in local not in server (bottom-up)
+        $deletedDirs = 0
+        Get-ChildItem -Path $currentDir -Recurse -Directory -Force | Sort-Object -Property FullName -Descending | ForEach-Object {
+            $relativePath = $_.FullName.Substring($currentDir.Length + 1)
+            if ($serverDirs -notcontains $relativePath) {
+                if ((Get-ChildItem -LiteralPath $_.FullName -Force | Measure-Object).Count -eq 0) {
+                    Remove-Item -LiteralPath $_.FullName -Force
+                    Write-Host "  [DELETED DIR] $relativePath" -ForegroundColor Red
+                    $deletedDirs++
+                }
+            }
+        }
+        
+        Write-Host ""
+        Write-Host "Cleanup complete:" -ForegroundColor Yellow
+        Write-Host "  Files deleted: $deletedFiles" -ForegroundColor Red
+        Write-Host "  Directories deleted: $deletedDirs" -ForegroundColor Red
+        
+        # Update IWAD paths
+        if ($config.IwadKey -ne "") {
+            $doomToolsProjects = Find-DoomToolsProjects -SearchPath $currentDir
+            Update-DoomToolsIwadPaths -ProjectPaths $doomToolsProjects -IwadKey $config.IwadKey
+        }
+        
+        Write-Host ""
+        Write-Host "Sync complete! Local now mirrors server." -ForegroundColor Green
+        Write-Host ""
+    }
+}
+
 function Invoke-Backup {
     param(
         [string]$PathOverride = "",
-        [string]$ForceOverride = "",
         [string]$IwadSelection = "",
-        [bool]$DumbCopy = $false,
-        [bool]$CleanBackup = $false
+        [bool]$ShowVerbose = $false,
+        [bool]$ResetBackup = $false
     )
     
     $config = Read-Config
     $backupPath = ""
-    $useDumbCopy = $DumbCopy
     $iwadKey = ""
     
-    # Determine IWAD to use
+    # Determine IWAD
     if ($IwadSelection -ne "") {
-        # User specified an IWAD
         if ($IWADS.ContainsKey($IwadSelection.ToLower())) {
             $iwadKey = $IwadSelection.ToLower()
         }
@@ -380,23 +459,14 @@ function Invoke-Backup {
         }
     }
     elseif ($config -ne $null -and $config.IwadKey -ne "") {
-        # Use IWAD from config
         $iwadKey = $config.IwadKey
     }
     else {
-        # Use default
         $iwadKey = $DEFAULT_IWAD
     }
     
-    # Determine backup path and mode
-    if ($ForceOverride -ne "") {
-        # -force specified: use it, enable dumb copy, ignore config
-        $backupPath = Normalize-Path $ForceOverride
-        $useDumbCopy = $true
-        Write-Host "Using forced backup path (dumb copy mode): $backupPath" -ForegroundColor Yellow
-    }
-    elseif ($config -eq $null) {
-        # No config exists
+    # Determine backup path
+    if ($config -eq $null) {
         if ($PathOverride -eq "") {
             Write-Host ""
             Write-Host "ERROR: No backup configuration found." -ForegroundColor Red
@@ -405,163 +475,92 @@ function Invoke-Backup {
             exit 1
         }
         
-        # -path specified: create config, do smart backup
         $backupPath = Normalize-Path $PathOverride
         Write-Host "Creating new backup configuration..." -ForegroundColor Cyan
         Write-Host "Using IWAD: $iwadKey" -ForegroundColor Cyan
     }
     else {
-        # Config exists
-        if ($PathOverride -ne "") {
-            Write-Host ""
-            Write-Host "ERROR: Backup path is already configured in $CONFIG_FILE" -ForegroundColor Red
-            Write-Host "To use a different path, use: dtbackup -force `"d:\path\to\backup`"" -ForegroundColor Yellow
-            Write-Host "To permanently change the path, edit or delete $CONFIG_FILE" -ForegroundColor Yellow
-            Write-Host ""
-            exit 1
-        }
-        
         $backupPath = $config.BackupPath
     }
     
     # Create backup directory if needed
-    try {
-        if (-not (Test-Path $backupPath)) {
-            Write-Host "Creating backup directory: $backupPath" -ForegroundColor Cyan
-            New-Item -Path $backupPath -ItemType Directory -Force | Out-Null
-        }
+    if (-not (Test-Path $backupPath)) {
+        Write-Host "Creating backup directory: $backupPath" -ForegroundColor Cyan
+        New-Item -Path $backupPath -ItemType Directory -Force | Out-Null
     }
-    catch {
-        Write-Host ""
-        Write-Host "ERROR: Failed to create backup directory: $backupPath" -ForegroundColor Red
-        Write-Host "Details: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host ""
-        exit 1
+    elseif ($ResetBackup) {
+        Write-Host "Resetting backup directory (deleting all contents)..." -ForegroundColor Yellow
+        Get-ChildItem -Path $backupPath -Force | Remove-Item -Recurse -Force
+        Write-Host "Backup directory cleared." -ForegroundColor Green
     }
     
     Write-Host ""
     Write-Host "=== Project Backup ===" -ForegroundColor Green
     Write-Host "Backup Location: $backupPath" -ForegroundColor Cyan
-    if ($useDumbCopy) {
-        Write-Host "Mode: Dumb Copy (copy all files, update hashes)" -ForegroundColor Yellow
+    if ($ResetBackup) {
+        Write-Host "Mode: Reset (full clean and copy)" -ForegroundColor Yellow
+    }
+    Write-Host ""
+    
+    # Use robocopy to copy everything
+    $currentDir = (Get-Location).Path
+    
+    Write-Host "Copying files with robocopy..." -ForegroundColor Cyan
+    Write-Host "  Source: $currentDir" -ForegroundColor Gray
+    Write-Host "  Destination: $backupPath" -ForegroundColor Gray
+    Write-Host ""
+    
+    if ($ShowVerbose) {
+        # Verbose mode - show all robocopy output
+        & robocopy $currentDir $backupPath /MIR /E /COPY:DAT /R:3 /W:5 /XD .git
+        $exitCode = $LASTEXITCODE
     }
     else {
-        Write-Host "Mode: Smart Copy (skip unchanged files)" -ForegroundColor Cyan
+        # Quiet mode - show progress bar
+        $job = Start-Job -ScriptBlock {
+            param($src, $dst)
+            & robocopy $src $dst /MIR /E /COPY:DAT /R:3 /W:5 /XD .git /NFL /NDL /NJH /NJS
+        } -ArgumentList $currentDir, $backupPath
+        
+        Write-Host "Copying files... " -NoNewline -ForegroundColor Cyan
+        $spinner = @('|', '/', '-', '\')
+        $i = 0
+        
+        while ($job.State -eq 'Running') {
+            Write-Host "`r$($spinner[$i % 4]) Copying files... " -NoNewline -ForegroundColor Cyan
+            Start-Sleep -Milliseconds 200
+            $i++
+        }
+        
+        $result = Receive-Job -Job $job
+        $exitCode = $result | Select-Object -Last 1
+        if ($exitCode -match "Exit Code : (\d+)") {
+            $exitCode = [int]$matches[1]
+        } else {
+            # Try to get from job's output
+            $exitCode = 0
+        }
+        
+        Remove-Job -Job $job
+        Write-Host "`rDone!                    " -ForegroundColor Green
     }
+    
+    # Robocopy exit codes: 0-7 are success, 8+ are errors
+    if ($exitCode -ge 8) {
+        Write-Host ""
+        Write-Host "ERROR: Robocopy failed with exit code $exitCode" -ForegroundColor Red
+        Write-Host "Exit code meanings:" -ForegroundColor Yellow
+        Write-Host "  8  = Some files/dirs could not be copied" -ForegroundColor Yellow
+        Write-Host "  16 = Serious error (no files copied)" -ForegroundColor Yellow
+        Write-Host ""
+        exit 1
+    }
+    
     Write-Host ""
+    Write-Host "Backup complete!" -ForegroundColor Green
     
-    # Get all files
-    $projectFiles = Get-ProjectFiles
-    Write-Host "Found $($projectFiles.Count) files to process..." -ForegroundColor Cyan
-    
-    # Get empty directories
-    $emptyDirs = Get-ChildItem -Path "." -Recurse -Directory -Force | Where-Object {
-        $_.FullName -notmatch "\\\.git\\" -and (Get-ChildItem -Path $_.FullName -Force | Measure-Object).Count -eq 0
-    }
-    
-    if ($emptyDirs.Count -gt 0) {
-        Write-Host "Found $($emptyDirs.Count) empty directories to preserve..." -ForegroundColor Cyan
-    }
-    
-    # Load existing hashes if doing smart copy
-    $existingHashes = @{}
-    if (-not $useDumbCopy -and $config -ne $null) {
-        $existingHashes = $config.FileHashes
-    }
-    
-    $newHashes = @{}
-    $copiedCount = 0
-    $skippedCount = 0
-    $errorCount = 0
-    $dirCount = 0
-    
-    # Create empty directories
-    $currentDir = (Get-Location).Path
-    foreach ($dir in $emptyDirs) {
-        $relativePath = $dir.FullName.Substring($currentDir.Length + 1)
-        $destDir = Join-Path $backupPath $relativePath
-        
-        if (-not (Test-Path $destDir)) {
-            try {
-                New-Item -Path $destDir -ItemType Directory -Force | Out-Null
-                Write-Host "  [CREATED DIR] $relativePath" -ForegroundColor Cyan
-                $dirCount++
-            }
-            catch {
-                Write-Host "  [ERROR] Failed to create directory: $relativePath" -ForegroundColor Red
-            }
-        }
-    }
-    
-    # Copy files
-    foreach ($file in $projectFiles) {
-        $sourcePath = Join-Path "." $file
-        $destPath = Join-Path $backupPath $file
-        
-        # Calculate hash
-        $currentHash = Get-FileHashMD5 -FilePath $sourcePath
-        
-        if ($currentHash -eq $null) {
-            Write-Host "WARNING: Could not hash file: $file" -ForegroundColor Yellow
-            $errorCount++
-            continue
-        }
-        
-        # Store hash for config update
-        $newHashes[$file] = $currentHash
-        
-        # Determine if file needs copying
-        $needsCopy = $true
-        if (-not $useDumbCopy) {
-            if ($existingHashes.ContainsKey($file)) {
-                if ($existingHashes[$file] -eq $currentHash) {
-                    $needsCopy = $false
-                }
-            }
-        }
-        
-        if ($needsCopy) {
-            # Ensure destination directory exists
-            $destDir = Split-Path $destPath -Parent
-            if ($destDir) {
-                if (-not (Test-Path -LiteralPath $destDir)) {
-                    try {
-                        # Create all parent directories
-                        $null = [System.IO.Directory]::CreateDirectory($destDir)
-                    }
-                    catch {
-                        Write-Host "  [ERROR] Failed to create directory for: $file" -ForegroundColor Red
-                        Write-Host "          Directory: $destDir" -ForegroundColor Red
-                        Write-Host "          $($_.Exception.Message)" -ForegroundColor Red
-                        $errorCount++
-                        continue
-                    }
-                }
-            }
-            
-            try {
-                Copy-Item -LiteralPath $sourcePath -Destination $destPath -Force
-                Write-Host "  [COPIED] $file" -ForegroundColor Green
-                $copiedCount++
-            }
-            catch {
-                Write-Host "  [ERROR] Failed to copy: $file" -ForegroundColor Red
-                Write-Host "          Source: $sourcePath" -ForegroundColor Red
-                Write-Host "          Dest: $destPath" -ForegroundColor Red
-                Write-Host "          $($_.Exception.Message)" -ForegroundColor Red
-                $errorCount++
-            }
-        }
-        else {
-            Write-Host "  [SKIP] $file (unchanged)" -ForegroundColor DarkGray
-            $skippedCount++
-        }
-    }
-    
-    # Update config file
-    Write-Host ""
-    Write-Host "Updating configuration file..." -ForegroundColor Cyan
-    Write-Config -BackupPath $backupPath -IwadKey $iwadKey -FileHashes $newHashes
+    # Save config
+    Write-Config -BackupPath $backupPath -IwadKey $iwadKey
     
     # Copy config file to backup
     $configSource = Join-Path "." $CONFIG_FILE
@@ -576,78 +575,6 @@ function Invoke-Backup {
         }
     }
     
-    # Clean backup directory if -clean flag is set
-    if ($CleanBackup) {
-        Write-Host ""
-        Write-Host "Cleaning backup directory..." -ForegroundColor Yellow
-        
-        # Build list of source directories (including empty ones)
-        $sourceDirs = @()
-        $allSourceDirs = Get-ChildItem -Path "." -Recurse -Directory -Force -ErrorAction SilentlyContinue | Where-Object {
-            $_.FullName -notmatch "\\\.git\\"
-        }
-        $currentDir = (Get-Location).Path
-        foreach ($dir in $allSourceDirs) {
-            $relativePath = $dir.FullName.Substring($currentDir.Length + 1)
-            $sourceDirs += $relativePath
-        }
-        
-        # Get all files in backup and delete those not in source
-        $backupFiles = Get-ChildItem -LiteralPath $backupPath -Recurse -File -Force -ErrorAction SilentlyContinue
-        $deletedCount = 0
-        
-        foreach ($file in $backupFiles) {
-            $relativePath = $file.FullName.Substring($backupPath.Length + 1)
-            
-            # Check if this file exists in source
-            if (-not $newHashes.ContainsKey($relativePath)) {
-                try {
-                    Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
-                    Write-Host "  [DELETED] $relativePath" -ForegroundColor Red
-                    $deletedCount++
-                }
-                catch {
-                    Write-Host "  [ERROR] Failed to delete: $relativePath" -ForegroundColor Red
-                    Write-Host "          $($_.Exception.Message)" -ForegroundColor Red
-                }
-            }
-        }
-        
-        # Get all directories in backup and delete those not in source
-        $backupDirs = Get-ChildItem -LiteralPath $backupPath -Recurse -Directory -Force -ErrorAction SilentlyContinue | Sort-Object -Property FullName -Descending
-        $deletedDirCount = 0
-        
-        foreach ($dir in $backupDirs) {
-            $relativePath = $dir.FullName.Substring($backupPath.Length + 1)
-            
-            # Check if this directory exists in source
-            if ($sourceDirs -notcontains $relativePath) {
-                try {
-                    Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction Stop
-                    Write-Host "  [DELETED DIR] $relativePath" -ForegroundColor Red
-                    $deletedDirCount++
-                }
-                catch {
-                    Write-Host "  [ERROR] Failed to delete directory: $relativePath" -ForegroundColor Red
-                }
-            }
-        }
-        
-        Write-Host ""
-        Write-Host "Cleanup complete:" -ForegroundColor Yellow
-        Write-Host "  Files deleted: $deletedCount" -ForegroundColor Red
-        Write-Host "  Directories deleted: $deletedDirCount" -ForegroundColor Red
-    }
-    
-    # Summary
-    Write-Host ""
-    Write-Host "=== Backup Complete ===" -ForegroundColor Green
-    Write-Host "  Directories created: $dirCount" -ForegroundColor Cyan
-    Write-Host "  Files copied: $copiedCount" -ForegroundColor Green
-    Write-Host "  Files skipped: $skippedCount" -ForegroundColor Cyan
-    if ($errorCount -gt 0) {
-        Write-Host "  Errors: $errorCount" -ForegroundColor Red
-    }
     Write-Host ""
 }
 
@@ -657,16 +584,13 @@ function Invoke-Restore {
         [bool]$UseFresh = $false
     )
     
-    # Check if current directory has content
-    $currentFiles = Get-ChildItem -Path "." -File -ErrorAction SilentlyContinue
-    $currentDirs = Get-ChildItem -Path "." -Directory -ErrorAction SilentlyContinue
-    $hasContent = ($currentFiles.Count -gt 0) -or ($currentDirs.Count -gt 0)
-    
+    $hasContent = (Get-ChildItem -Path "." -Force | Measure-Object).Count -gt 0
     $backupPath = ""
-    $doFreshRestore = $UseFresh
+    $config = $null
     
+    # Determine restore path and mode
     if (-not $hasContent) {
-        # Empty directory - must provide a path
+        # Empty directory
         if ($RestorePath -eq "") {
             Write-Host ""
             Write-Host "ERROR: Current directory is empty." -ForegroundColor Red
@@ -676,18 +600,14 @@ function Invoke-Restore {
         }
         
         $backupPath = Normalize-Path $RestorePath
-        $doFreshRestore = $true
     }
     else {
         # Directory has content
         if ($UseFresh) {
-            # -fresh flag used
             if ($RestorePath -ne "") {
-                # -fresh with path: clean + copy from specified path
                 $backupPath = Normalize-Path $RestorePath
             }
             else {
-                # -fresh without path: clean + copy from config
                 $config = Read-Config
                 if ($config -eq $null) {
                     Write-Host ""
@@ -698,347 +618,112 @@ function Invoke-Restore {
                 }
                 $backupPath = $config.BackupPath
             }
-            $doFreshRestore = $true
+            
+            # Clean directory
+            Write-Host ""
+            Write-Host "Cleaning current directory..." -ForegroundColor Yellow
+            Get-ChildItem -Path "." -Force | Remove-Item -Recurse -Force
         }
         else {
-            # No -fresh: smart restore from config
-            $config = Read-Config
-            if ($config -eq $null) {
-                Write-Host ""
-                Write-Host "ERROR: No backup configuration found ($CONFIG_FILE)" -ForegroundColor Red
-                Write-Host "Use -fresh to restore from a directory:" -ForegroundColor Yellow
-                Write-Host "  dtbackup restore -fresh `"d:\path\to\backup`"" -ForegroundColor Yellow
-                Write-Host ""
-                exit 1
-            }
-            $backupPath = $config.BackupPath
-            $doFreshRestore = $false
+            Write-Host ""
+            Write-Host "ERROR: Directory is not empty." -ForegroundColor Red
+            Write-Host "Use -fresh to clean and restore:" -ForegroundColor Yellow
+            Write-Host "  dtbackup restore -fresh" -ForegroundColor Yellow
+            Write-Host ""
+            exit 1
         }
     }
     
-    # Verify backup directory exists
-    if (-not (Test-Path -LiteralPath $backupPath)) {
+    if (-not (Test-Path $backupPath)) {
         Write-Host ""
-        Write-Host "ERROR: Backup directory does not exist: $backupPath" -ForegroundColor Red
+        Write-Host "ERROR: Backup path does not exist: $backupPath" -ForegroundColor Red
         Write-Host ""
         exit 1
     }
     
     Write-Host ""
     Write-Host "=== Project Restore ===" -ForegroundColor Green
-    Write-Host "Restore From: $backupPath" -ForegroundColor Cyan
-    if ($doFreshRestore) {
-        Write-Host "Mode: Fresh Restore (clean directory, copy all files)" -ForegroundColor Yellow
-    }
-    else {
-        Write-Host "Mode: Smart Restore (skip unchanged files)" -ForegroundColor Cyan
-    }
+    Write-Host "Restore Location: $backupPath" -ForegroundColor Cyan
     Write-Host ""
     
-    # Clean directory if using fresh mode
-    if ($doFreshRestore -and $hasContent) {
-        Write-Host "Cleaning current directory..." -ForegroundColor Yellow
-        
-        $itemsToDelete = Get-ChildItem -Path "." -Force | Where-Object { 
-            $_.Name -ne "." -and $_.Name -ne ".." 
-        }
-        
-        foreach ($item in $itemsToDelete) {
-            try {
-                Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction Stop
-                Write-Host "  [DELETED] $($item.Name)" -ForegroundColor DarkGray
-            }
-            catch {
-                Write-Host "  [ERROR] Failed to delete: $($item.Name)" -ForegroundColor Red
-                Write-Host "          $($_.Exception.Message)" -ForegroundColor Red
-            }
-        }
-        Write-Host ""
-    }
-    
-    # Get backup files
-    $backupFiles = Get-ChildItem -LiteralPath $backupPath -Recurse -File -Force -ErrorAction SilentlyContinue
-    Write-Host "Found $($backupFiles.Count) files in backup..." -ForegroundColor Cyan
-    
-    # Get empty directories from backup
-    $emptyDirs = Get-ChildItem -LiteralPath $backupPath -Recurse -Directory -Force -ErrorAction SilentlyContinue | Where-Object {
-        (Get-ChildItem -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue | Measure-Object).Count -eq 0
-    }
-    
-    if ($emptyDirs.Count -gt 0) {
-        Write-Host "Found $($emptyDirs.Count) empty directories in backup..." -ForegroundColor Cyan
-    }
-    
-    # Calculate current file hashes if doing smart restore
-    $currentHashes = @{}
-    if (-not $doFreshRestore -and $hasContent) {
-        Write-Host "Calculating hashes for current files..." -ForegroundColor Cyan
-        $existingFiles = Get-ChildItem -Path "." -Recurse -File -Force -ErrorAction SilentlyContinue
-        foreach ($file in $existingFiles) {
-            $relativePath = $file.FullName.Substring((Get-Location).Path.Length + 1)
-            $hash = Get-FileHashMD5 -FilePath $file.FullName
-            if ($hash -ne $null) {
-                $currentHashes[$relativePath] = $hash
-            }
-        }
-    }
-    
-    $copiedCount = 0
-    $skippedCount = 0
-    $errorCount = 0
-    $dirCount = 0
-    
-    # Create empty directories
-    foreach ($dir in $emptyDirs) {
-        $relativePath = $dir.FullName.Substring($backupPath.Length + 1)
-        $destDir = Join-Path "." $relativePath
-        
-        if (-not (Test-Path -LiteralPath $destDir)) {
-            try {
-                New-Item -ItemType Directory -Path $destDir -Force -ErrorAction Stop | Out-Null
-                Write-Host "  [CREATED DIR] $relativePath" -ForegroundColor Cyan
-                $dirCount++
-            }
-            catch {
-                Write-Host "  [ERROR] Failed to create directory: $relativePath" -ForegroundColor Red
-            }
-        }
-    }
-    
-    # Copy files
-    $ignoredFiles = @("doom-loader.conf", "doommake.properties")
-    
-    foreach ($file in $backupFiles) {
-        $relativePath = $file.FullName.Substring($backupPath.Length + 1)
-        $destPath = Join-Path "." $relativePath
-        
-        # Check if this is a file we should ignore hash differences for
-        $fileName = Split-Path $relativePath -Leaf
-        $ignoreHash = $ignoredFiles -contains $fileName
-        
-        # Determine if file needs copying
-        $needsCopy = $true
-        if (-not $doFreshRestore -and -not $ignoreHash) {
-            # Smart restore - check hash (unless it's an ignored file)
-            $backupHash = Get-FileHashMD5 -FilePath $file.FullName
-            
-            if ($backupHash -ne $null -and $currentHashes.ContainsKey($relativePath)) {
-                if ($currentHashes[$relativePath] -eq $backupHash) {
-                    $needsCopy = $false
-                }
-            }
-        }
-        
-        if ($needsCopy) {
-            # Ensure destination directory exists
-            $destDir = Split-Path $destPath -Parent
-            if ($destDir) {
-                if (-not (Test-Path -LiteralPath $destDir)) {
-                    try {
-                        # Create all parent directories
-                        $null = [System.IO.Directory]::CreateDirectory($destDir)
-                    }
-                    catch {
-                        Write-Host "  [ERROR] Failed to create directory for: $relativePath" -ForegroundColor Red
-                        Write-Host "          Directory: $destDir" -ForegroundColor Red
-                        Write-Host "          $($_.Exception.Message)" -ForegroundColor Red
-                        $errorCount++
-                        continue
-                    }
-                }
-            }
-            
-            try {
-                Copy-Item -LiteralPath $file.FullName -Destination $destPath -Force
-                Write-Host "  [COPIED] $relativePath" -ForegroundColor Green
-                $copiedCount++
-            }
-            catch {
-                Write-Host "  [ERROR] Failed to copy: $relativePath" -ForegroundColor Red
-                Write-Host "          $($_.Exception.Message)" -ForegroundColor Red
-                $errorCount++
-            }
-        }
-        else {
-            Write-Host "  [SKIP] $relativePath (unchanged)" -ForegroundColor DarkGray
-            $skippedCount++
-        }
-    }
-    
-    # Search for DoomTools projects and update IWAD paths
+    # Use robocopy to restore everything
     $currentDir = (Get-Location).Path
-    $doomToolsProjects = Find-DoomToolsProjects -SearchPath $currentDir
     
-    # Get IWAD key from config or use default
-    $iwadKey = $DEFAULT_IWAD
-    if ($config -ne $null -and $config.IwadKey -ne "") {
-        $iwadKey = $config.IwadKey
-    }
-    
-    Update-DoomToolsIwadPaths -ProjectPaths $doomToolsProjects -IwadKey $iwadKey
-    
-    # Summary
+    Write-Host "Restoring files with robocopy..." -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "=== Restore Complete ===" -ForegroundColor Green
-    Write-Host "  Directories created: $dirCount" -ForegroundColor Cyan
-    Write-Host "  Files copied: $copiedCount" -ForegroundColor Green
-    Write-Host "  Files skipped: $skippedCount" -ForegroundColor Cyan
-    if ($doomToolsProjects.Count -gt 0) {
-        Write-Host "  DoomTools projects updated: $($doomToolsProjects.Count)" -ForegroundColor Magenta
+    
+    # Run robocopy and let it output directly to console
+    & robocopy $backupPath $currentDir /E /COPY:DAT /R:3 /W:5
+    $exitCode = $LASTEXITCODE
+    
+    # Robocopy exit codes: 0-7 are success, 8+ are errors
+    if ($exitCode -ge 8) {
+        Write-Host ""
+        Write-Host "ERROR: Robocopy failed with exit code $exitCode" -ForegroundColor Red
+        Write-Host ""
+        exit 1
     }
-    if ($errorCount -gt 0) {
-        Write-Host "  Errors: $errorCount" -ForegroundColor Red
-    }
+    
     Write-Host ""
-}
-
-function Invoke-Verify {
-    # Check for config file
-    $config = Read-Config
+    Write-Host "Restore complete!" -ForegroundColor Green
+    
+    # Update IWAD paths if config exists
     if ($config -eq $null) {
-        Write-Host ""
-        Write-Host "ERROR: No backup configuration found ($CONFIG_FILE)" -ForegroundColor Red
-        Write-Host "Cannot verify without a backup configuration." -ForegroundColor Yellow
-        Write-Host ""
-        exit 1
+        $config = Read-Config
     }
     
-    $backupPath = $config.BackupPath
-    
-    # Check if backup directory exists
-    if (-not (Test-Path -LiteralPath $backupPath)) {
-        Write-Host ""
-        Write-Host "ERROR: Backup directory does not exist: $backupPath" -ForegroundColor Red
-        Write-Host ""
-        exit 1
+    if ($config -ne $null -and $config.IwadKey -ne "") {
+        $currentDir = (Get-Location).Path
+        $doomToolsProjects = Find-DoomToolsProjects -SearchPath $currentDir
+        Update-DoomToolsIwadPaths -ProjectPaths $doomToolsProjects -IwadKey $config.IwadKey
     }
     
-    Write-Host ""
-    Write-Host "=== Backup Verification ===" -ForegroundColor Green
-    Write-Host "Local Directory: $(Get-Location)" -ForegroundColor Cyan
-    Write-Host "Backup Directory: $backupPath" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "Comparing files..." -ForegroundColor Cyan
-    Write-Host ""
-    
-    # Get local files
-    $localFiles = Get-ProjectFiles
-    $localHashes = @{}
-    
-    Write-Host "Calculating hashes for local files..." -ForegroundColor Gray
-    $fileCount = 0
-    foreach ($file in $localFiles) {
-        $fileCount++
-        if ($fileCount % 50 -eq 0) {
-            Write-Host "  Processed $fileCount / $($localFiles.Count) files..." -ForegroundColor DarkGray
-        }
-        $sourcePath = Join-Path "." $file
-        $hash = Get-FileHashMD5 -FilePath $sourcePath
-        if ($hash -ne $null) {
-            $localHashes[$file] = $hash
-        }
-    }
-    Write-Host "  Complete: $($localFiles.Count) files processed" -ForegroundColor DarkGray
-    
-    # Get backup files
-    $backupFiles = @()
-    $backupHashes = @{}
-    
-    Write-Host "Calculating hashes for backup files..." -ForegroundColor Gray
-    $allBackupFiles = Get-ChildItem -LiteralPath $backupPath -Recurse -File -Force -ErrorAction SilentlyContinue
-    $fileCount = 0
-    foreach ($file in $allBackupFiles) {
-        $fileCount++
-        if ($fileCount % 50 -eq 0) {
-            Write-Host "  Processed $fileCount files..." -ForegroundColor DarkGray
-        }
-        $relativePath = $file.FullName.Substring($backupPath.Length + 1)
-        $backupFiles += $relativePath
-        $hash = Get-FileHashMD5 -FilePath $file.FullName
-        if ($hash -ne $null) {
-            $backupHashes[$relativePath] = $hash
-        }
-    }
-    Write-Host "  Complete: $fileCount files processed" -ForegroundColor DarkGray
-    
-    Write-Host ""
-    
-    # Compare files
-    $matchCount = 0
-    $mismatchCount = 0
-    $localOnlyCount = 0
-    $backupOnlyCount = 0
-    $ignoredFiles = @("doom-loader.conf", "doommake.properties")
-    
-    # Check files in local
-    foreach ($file in $localFiles) {
-        # Check if this is a file we should ignore hash differences for
-        $fileName = Split-Path $file -Leaf
-        $ignoreHash = $ignoredFiles -contains $fileName
-        
-        if ($backupHashes.ContainsKey($file)) {
-            if ($ignoreHash) {
-                # Always count as matching for ignored files
-                $matchCount++
-            }
-            elseif ($localHashes[$file] -eq $backupHashes[$file]) {
-                $matchCount++
-            }
-            else {
-                Write-Host "  [DIFFERENT] $file" -ForegroundColor Yellow
-                $mismatchCount++
-            }
-        }
-        else {
-            Write-Host "  [LOCAL ONLY] $file" -ForegroundColor Cyan
-            $localOnlyCount++
-        }
-    }
-    
-    # Check files only in backup
-    foreach ($file in $backupFiles) {
-        if (-not $localHashes.ContainsKey($file)) {
-            Write-Host "  [BACKUP ONLY] $file" -ForegroundColor Magenta
-            $backupOnlyCount++
-        }
-    }
-    
-    # Summary
-    Write-Host ""
-    Write-Host "=== Verification Summary ===" -ForegroundColor Green
-    Write-Host "  Files matching: $matchCount" -ForegroundColor Green
-    Write-Host "  Files different: $mismatchCount" -ForegroundColor Yellow
-    Write-Host "  Files only in local: $localOnlyCount" -ForegroundColor Cyan
-    Write-Host "  Files only in backup: $backupOnlyCount" -ForegroundColor Magenta
-    Write-Host ""
-    
-    if ($mismatchCount -eq 0 -and $localOnlyCount -eq 0 -and $backupOnlyCount -eq 0) {
-        Write-Host "Backup is synchronized!" -ForegroundColor Green
-    }
-    else {
-        Write-Host "Backup is out of sync." -ForegroundColor Yellow
-    }
     Write-Host ""
 }
 
-# Main entry point
-if ($action -eq "help" -or $action -eq "-h" -or $action -eq "-help" -or $action -eq "--help") {
+# Main script logic
+if ($helpfull) {
+    Show-HelpFull
+}
+
+if ($h) {
     Show-Help
+}
+
+if ($action -eq "") {
+    Write-Host ""
+    Write-Host "ERROR: No action specified." -ForegroundColor Red
+    Write-Host "You must specify an action: backup, restore, sync, or help" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Usage:" -ForegroundColor Cyan
+    Write-Host "  dtbackup backup [-path <directory>] [-iwad <key>] [-reset] [-v]" -ForegroundColor White
+    Write-Host "  dtbackup restore [-fresh] [<directory>]" -ForegroundColor White
+    Write-Host "  dtbackup sync -local | -server" -ForegroundColor White
+    Write-Host "  dtbackup help" -ForegroundColor White
+    Write-Host ""
+    Write-Host "Run 'dtbackup -h' for quick help or 'dtbackup -helpfull' for detailed help" -ForegroundColor Gray
+    Write-Host ""
+    exit 1
 }
 
 switch ($action.ToLower()) {
     "backup" {
-        Invoke-Backup -PathOverride $path -ForceOverride $force -IwadSelection $iwad -DumbCopy $dumbcopy -CleanBackup $clean
+        Invoke-Backup -PathOverride $path -IwadSelection $iwad -ShowVerbose $v -ResetBackup $reset
     }
     "restore" {
         Invoke-Restore -RestorePath $restorepath -UseFresh $fresh
     }
-    "verify" {
-        Invoke-Verify
+    "sync" {
+        Invoke-Sync -SyncToLocal $local -SyncToServer $server
+    }
+    "help" {
+        Show-Help
     }
     default {
+        Write-Host ""
         Write-Host "ERROR: Unknown action '$action'" -ForegroundColor Red
-        Write-Host "Valid actions: backup, restore, verify, help" -ForegroundColor Yellow
+        Write-Host "Valid actions: backup, restore, sync, help" -ForegroundColor Yellow
+        Write-Host ""
         exit 1
     }
 }
