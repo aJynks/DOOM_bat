@@ -28,17 +28,21 @@ rem       Ignore all other arguments
 rem   - If ANY argument is "explode":
 rem       Enter explode mode (standalone)
 rem       Ignore all other arguments
+rem   - If ANY argument is "watch":
+rem       Enter watch mode (standalone)
+rem       Ignore all other arguments
 rem   - Arguments before "--" are passed to doommake
 rem   - If "--" is present, doom.bat is run after doommake
 rem   - Arguments after "--" are passed to doom.bat
 rem   - If doommake returns non-zero, doom.bat will NOT run
 rem ==============================================================================
 
-rem ---- Scan ALL arguments for "update", "create", or "explode" ------------------
+rem ---- Scan ALL arguments for special commands ----------------------------------
 for %%A in (%*) do (
-    if /I "%%~A"=="update" goto do_update
-    if /I "%%~A"=="create" goto do_create
+    if /I "%%~A"=="update"  goto do_update
+    if /I "%%~A"=="create"  goto do_create
     if /I "%%~A"=="explode" goto do_explode
+    if /I "%%~A"=="watch"   goto do_watch
 )
 
 rem ---- Help triggers ------------------------------------------------------------
@@ -174,6 +178,7 @@ endlocal & exit /b %CREATE_ERR%
 rem ---- Explode mode (standalone) ------------------------------------------------
 set "EXPLODE_WAD="
 set "IWAD_NAME=doom2"
+set "USE_WAD_PAL="
 
 rem Move past the word "explode"
 :skip_explode_word
@@ -201,6 +206,12 @@ if /I "%~1"=="-i" (
     goto parse_explode_loop
 )
 
+if /I "%~1"=="-p" (
+    set "USE_WAD_PAL=1"
+    shift
+    goto parse_explode_loop
+)
+
 rem Unknown argument - skip it
 shift
 goto parse_explode_loop
@@ -216,7 +227,11 @@ echo I am in explode mode
 echo.
 echo WAD File     : %EXPLODE_WAD%
 echo Project Name : %EXPLODE_PROJECT%
-echo IWAD Path    : %IWAD_PATH%
+if defined USE_WAD_PAL (
+    echo PLAYPAL      : %EXPLODE_WAD% ^(from input WAD^)
+) else (
+    echo IWAD Path    : %IWAD_PATH%
+)
 echo.
 
 if "%IWAD_PATH%"=="" (
@@ -225,8 +240,44 @@ if "%IWAD_PATH%"=="" (
     exit /b 2
 )
 
-(echo %EXPLODE_STEM%&echo %IWAD_PATH%&echo dsdhacked)|doommake %EXPLODE_PROJECT% --convert-palette "%IWAD_PATH%" --convert --explode "%EXPLODE_WAD%"
+if defined USE_WAD_PAL (
+    (echo %EXPLODE_STEM%&echo %IWAD_PATH%&echo dsdhacked)|doommake %EXPLODE_PROJECT% --convert-palette "%EXPLODE_WAD%" --convert --explode "%EXPLODE_WAD%"
+) else (
+    (echo %EXPLODE_STEM%&echo %IWAD_PATH%&echo dsdhacked)|doommake %EXPLODE_PROJECT% --convert-palette "%IWAD_PATH%" --convert --explode "%EXPLODE_WAD%"
+)
 endlocal & exit /b %ERRORLEVEL%
+
+
+:do_watch
+rem ---- Watch mode (standalone; ignore all other args) ---------------------------
+rem Verify we are inside a DoomTools project root by checking for both:
+rem   - doommake.script
+rem   - .doommake folder
+
+if not exist "doommake.script" (
+    echo Error: doommake.script not found in current directory.
+    echo dmake watch must be run from the root of a DoomTools project.
+    exit /b 2
+)
+if not exist "doommake.project.properties" (
+    echo Error: doommake.project.properties not found in current directory.
+    echo dmake watch must be run from the root of a DoomTools project.
+    exit /b 2
+)
+if not exist "doommake.properties" (
+    echo Error: doommake.properties not found in current directory.
+    echo dmake watch must be run from the root of a DoomTools project.
+    exit /b 2
+)
+
+echo Watching project in: %CD%
+echo.
+for /f "delims=" %%P in ('where dmake_watch.py 2^>nul') do set "WATCH_SCRIPT=%%P" & goto found_watch
+echo Error: dmake_watch.py not found on PATH.
+exit /b 2
+:found_watch
+py "%WATCH_SCRIPT%"
+exit /b %ERRORLEVEL%
 
 
 :help
@@ -255,11 +306,15 @@ echo.
 echo     If ANY argument is "explode", ALL other arguments are ignored and:
 echo       explode mode is entered
 echo.
+echo     If ANY argument is "watch", ALL other arguments are ignored and:
+echo       watch mode is entered (must be run from a DoomTools project root)
+echo.
 echo USAGE
 echo   dmake [doommake_args...] [-- [doom_args...]]
 echo   dmake update
 echo   dmake create ProjectName [-i iwad] [-d folder]
-echo   dmake explode filename.wad [-i iwad]
+echo   dmake explode filename.wad [-i iwad] [-p]
+echo   dmake watch
 echo.
 echo CREATE MODE OPTIONS
 echo   ProjectName              Name of the project to create
@@ -273,6 +328,14 @@ echo   filename.wad             WAD file to explode
 echo   -i iwad                  IWAD to use (default: doom2)
 echo                            Options: doom, doom2, tnt, plutonia, heretic,
 echo                                     hexen, free1, free2
+echo   -p                       Use input WAD's own PLAYPAL for palette conversion
+echo                            instead of the IWAD (for WADs with custom palettes)
+echo.
+echo WATCH MODE
+echo   Monitors the project for file changes and rebuilds automatically.
+echo   Must be run from the root of a DoomTools project (requires
+echo   doommake.script, doommake.project.properties, and
+echo   doommake.properties to be present in the current directory).
 echo.
 echo EXAMPLES
 echo   dmake create MyWAD
@@ -280,7 +343,10 @@ echo   dmake create MyWAD -i doom -d projects
 echo   dmake create TestWAD -d "_01"
 echo   dmake explode summoner.wad
 echo   dmake explode summoner.wad -i tnt
+echo   dmake explode summoner.wad -p
+echo   dmake explode summoner.wad -i tnt -p
 echo   dmake -- -skill 4 -warp 1
 echo   dmake update
+echo   dmake watch
 echo.
 exit /b 0

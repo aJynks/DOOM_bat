@@ -6,7 +6,7 @@ $sourcePort_exes = @{
     "choco"  = "d:\Projects\DoomProjects\_SourcePorts\Chocolate-Doom\chocolate-doom.exe"
     "crispy" = "d:\Projects\DoomProjects\_SourcePorts\Crispy-Doom\crispy-doom.exe"
     "dsda"   = "d:\Projects\DoomProjects\_SourcePorts\dsda-Doom\dsda-doom.exe"
-    "edge"   = ""
+    "crl"    = "d:\Projects\DoomProjects\_SourcePorts\CRL\crl-doom.exe"
     "helion" = "d:\Projects\DoomProjects\_SourcePorts\Helion-Doom\Helion.exe"
     "kex"    = "d:\Projects\DoomProjects\_SourcePorts\Kex-Doom\DOOM + DOOM II\doom_gog.exe"
     "nugget" = "d:\Projects\DoomProjects\_SourcePorts\Nugget-Doom\nugget-doom.exe"
@@ -37,7 +37,7 @@ $pak = @{
         "d:\Projects\DoomProjects\_SourcePorts\_paks\extHUD_dsda-nyan_VERTICAL_Time.MapName.wad",
         "d:\Projects\DoomProjects\_SourcePorts\_paks\statusBar-GFXonly-Helmet.wad"
     )
-	"origGuns" = @(
+    "origGuns" = @(
         "d:\Projects\DoomProjects\_SourcePorts\_paks\Doom2-Original_Sound-All_Weapons.wad"
     )
 }
@@ -66,7 +66,7 @@ function Write-SectionHeader {
 function Show-Help {
 
     Write-Host ""
-    Write-HeaderLine "===============================================================================" 
+    Write-HeaderLine "==============================================================================="
     Write-HeaderLine " DOOM RUNNER - doom_runDoomWad.ps1"
     Write-HeaderLine "==============================================================================="
 
@@ -82,6 +82,7 @@ function Show-Help {
     Write-Host "    doom -warp 7                 (uses default skill from doom-loader.conf in project dirs)" -ForegroundColor Gray
     Write-Host "    doom pak1 --add pak2          (pak1 loads first, pak2 loads LAST)" -ForegroundColor Gray
     Write-Host "    doom -warp 5 -nosound pak1 --add pak3 pak6" -ForegroundColor Gray
+    Write-Host "    doom -file mywad.wad          (if [None] is selected in the menu, this CLI -file is used)" -ForegroundColor Gray
 
     Write-SectionHeader "WHAT THIS SCRIPT DOES"
     Write-Host "  Launcher wrapper that:" -ForegroundColor White
@@ -90,7 +91,8 @@ function Show-Help {
     Write-Host "  - Expands pak sets (pak1, pak2, ...)" -ForegroundColor White
     Write-Host "  - In normal folders:" -ForegroundColor White
     Write-Host "      * 1 WAD in folder -> auto loads it" -ForegroundColor White
-    Write-Host "      * >1 WADs -> ASCII menu to pick one" -ForegroundColor White
+    Write-Host "      * >1 WADs -> ASCII menu to pick one (or [None])" -ForegroundColor White
+    Write-Host "      * [None] -> no folder WAD is added; any CLI -file is used as-is" -ForegroundColor White
     Write-Host "      * 0 WADs -> launches port + IWAD only" -ForegroundColor White
     Write-Host "  - In DoomMake project folders:" -ForegroundColor White
     Write-Host "      * uses doom-loader.conf to load ./build/<project>.wad" -ForegroundColor White
@@ -182,7 +184,7 @@ function Show-Help {
     Write-Host "  doom --listpaks    (list all defined pak names)" -ForegroundColor Gray
 
     Write-Host ""
-    Write-HeaderLine "===============================================================================" 
+    Write-HeaderLine "==============================================================================="
     Write-Host ""
 }
 
@@ -352,6 +354,15 @@ function Select-FromListAscii {
     )
 
     if ($Items.Count -lt 1) { return $null }
+
+    $noneItem = [PSCustomObject]@{
+        Name     = "[None]"
+        FullName = $null
+        __isNone = $true
+    }
+
+    $Items = @($noneItem) + $Items
+
     if ($Items.Count -eq 1) { return $Items[0] }
 
     $bg       = "DarkBlue"
@@ -495,6 +506,8 @@ function Ensure-DoomLoaderConf {
         "Default Warps",
         ("warp = " + $warpDefault),
         "skill = 4",
+        "",
+        ("defaultPort = " + $defaultPortName),
         ""
     )
 
@@ -512,11 +525,12 @@ function Read-DoomLoaderConf {
     }
 
     $cfg = [ordered]@{
-        release  = $null
-        dehacked = $null
-        iwad     = $null
-        warp     = $null
-        skill    = $null
+        release     = $null
+        dehacked    = $null
+        iwad        = $null
+        warp        = $null
+        skill       = $null
+        defaultport = $null
     }
 
     $lines = Get-Content -LiteralPath $ConfPath -ErrorAction Stop
@@ -535,11 +549,12 @@ function Read-DoomLoaderConf {
             $v = $matches[2].Trim()
 
             switch ($k) {
-                "release"  { $cfg.release  = $v }
-                "dehacked" { $cfg.dehacked = $v }
-                "iwad"     { $cfg.iwad     = $v }
-                "warp"     { $cfg.warp     = $v }
-                "skill"    { $cfg.skill    = $v }
+                "release"     { $cfg.release     = $v }
+                "dehacked"    { $cfg.dehacked    = $v }
+                "iwad"        { $cfg.iwad        = $v }
+                "warp"        { $cfg.warp        = $v }
+                "skill"       { $cfg.skill       = $v }
+                "defaultport" { $cfg.defaultport = $v }
             }
         }
     }
@@ -642,6 +657,15 @@ if ($hasDoomMakeProject) {
     if (-not [string]::IsNullOrWhiteSpace($loader.iwad)) {
         $usediWad = $loader.iwad
         $usedIwadName = "conf"
+    }
+
+    # Apply defaultPort from conf ONLY if user did not specify a port on the CLI
+    if (-not [string]::IsNullOrWhiteSpace($loader.defaultport)) {
+        $confPort = $loader.defaultport.ToLowerInvariant()
+        if ($sourcePort_exes.ContainsKey($confPort) -and $usedPortName -eq $defaultPortName) {
+            $usedPortName = $confPort
+            $usedPort     = $sourcePort_exes[$confPort]
+        }
     }
 
     # Validate selected port/iwad + pak wad paths
@@ -795,7 +819,13 @@ elseif ($wadFiles.Count -gt 1) {
         -DisplayProperty "Name"
 
     if ($null -eq $selected) { exit }
-    $wadFullPath = $selected.FullName
+
+    if ($selected.PSObject.Properties["__isNone"]) {
+        $wadFullPath = $null
+    }
+    else {
+        $wadFullPath = $selected.FullName
+    }
 }
 
 # Launch

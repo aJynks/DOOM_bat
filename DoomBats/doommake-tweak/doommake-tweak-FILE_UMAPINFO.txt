@@ -10,6 +10,7 @@ MAP MAP01
 	skytexture = "SKY1"
 	partime = 1234
 	intertext = clear
+	//bossaction = Deh_Actor_240, 24794, 1 // use string name for vanilla, thing #-1 for custom.
 	//episode = "M_EPI1", "EPISODE1_NAME", "1"
 	// Music:
 }
