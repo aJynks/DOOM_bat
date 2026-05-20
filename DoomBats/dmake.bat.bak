@@ -31,9 +31,6 @@ rem       Ignore all other arguments
 rem   - If ANY argument is "watch":
 rem       Enter watch mode (standalone)
 rem       Ignore all other arguments
-rem   - If ANY argument is "texturex":
-rem       Enter texturex mode (standalone)
-rem       Ignore all other arguments
 rem   - Arguments before "--" are passed to doommake
 rem   - If "--" is present, doom.bat is run after doommake
 rem   - Arguments after "--" are passed to doom.bat
@@ -42,11 +39,10 @@ rem ============================================================================
 
 rem ---- Scan ALL arguments for special commands ----------------------------------
 for %%A in (%*) do (
-    if /I "%%~A"=="update"   goto do_update
-    if /I "%%~A"=="create"   goto do_create
-    if /I "%%~A"=="explode"  goto do_explode
-    if /I "%%~A"=="watch"    goto do_watch
-    if /I "%%~A"=="texturex" goto do_texturex
+    if /I "%%~A"=="update"  goto do_update
+    if /I "%%~A"=="create"  goto do_create
+    if /I "%%~A"=="explode" goto do_explode
+    if /I "%%~A"=="watch"   goto do_watch
 )
 
 rem ---- Help triggers ------------------------------------------------------------
@@ -284,53 +280,6 @@ py "%WATCH_SCRIPT%"
 exit /b %ERRORLEVEL%
 
 
-:do_texturex
-rem ---- TextureX export mode (standalone; ignore all other args) -----------------
-rem Verify we are inside a DoomTools project root
-
-if not exist "doommake.script" (
-    echo Error: doommake.script not found in current directory.
-    echo dmake texturex must be run from the root of a DoomTools project.
-    exit /b 2
-)
-if not exist "doommake.project.properties" (
-    echo Error: doommake.project.properties not found in current directory.
-    echo dmake texturex must be run from the root of a DoomTools project.
-    exit /b 2
-)
-if not exist "doommake.properties" (
-    echo Error: doommake.properties not found in current directory.
-    echo dmake texturex must be run from the root of a DoomTools project.
-    exit /b 2
-)
-
-rem ---- Check for -make and -fresh flags ------------------------------------------
-set "TEXTUREX_MAKE="
-set "TEXTUREX_FRESH="
-for %%A in (%*) do (
-    if /I "%%~A"=="-make"  set "TEXTUREX_MAKE=1"
-    if /I "%%~A"=="-fresh" set "TEXTUREX_FRESH=1"
-)
-
-call wadtex ./build/textures.wad --export ./src/textures/texture1.txt
-set "WADTEX_ERR=%ERRORLEVEL%"
-if not "%WADTEX_ERR%"=="0" exit /b %WADTEX_ERR%
-
-if defined TEXTUREX_FRESH (
-    call doommake clean
-    if not "%ERRORLEVEL%"=="0" exit /b %ERRORLEVEL%
-    call doommake make
-    exit /b %ERRORLEVEL%
-)
-
-if defined TEXTUREX_MAKE (
-    call doommake make
-    exit /b %ERRORLEVEL%
-)
-
-exit /b 0
-
-
 :help
 echo.
 echo ==============================================================================
@@ -360,16 +309,12 @@ echo.
 echo     If ANY argument is "watch", ALL other arguments are ignored and:
 echo       watch mode is entered (must be run from a DoomTools project root)
 echo.
-echo     If ANY argument is "texturex", ALL other arguments are ignored and:
-echo       texturex mode is entered (must be run from a DoomTools project root)
-echo.
 echo USAGE
 echo   dmake [doommake_args...] [-- [doom_args...]]
 echo   dmake update
 echo   dmake create ProjectName [-i iwad] [-d folder]
 echo   dmake explode filename.wad [-i iwad] [-p]
 echo   dmake watch
-echo   dmake texturex
 echo.
 echo CREATE MODE OPTIONS
 echo   ProjectName              Name of the project to create
@@ -392,14 +337,6 @@ echo   Must be run from the root of a DoomTools project (requires
 echo   doommake.script, doommake.project.properties, and
 echo   doommake.properties to be present in the current directory).
 echo.
-echo TEXTUREX MODE
-echo   Exports TEXTURE1 data from the built textures WAD to the source text file.
-echo   Runs: wadtex ./build/textures.wad --export ./src/textures/texture1.txt
-echo   Must be run from the root of a DoomTools project.
-echo.
-echo   -make    After a successful export, run doommake make
-echo   -fresh   After a successful export, run doommake clean then doommake make
-echo.
 echo EXAMPLES
 echo   dmake create MyWAD
 echo   dmake create MyWAD -i doom -d projects
@@ -411,8 +348,5 @@ echo   dmake explode summoner.wad -i tnt -p
 echo   dmake -- -skill 4 -warp 1
 echo   dmake update
 echo   dmake watch
-echo   dmake texturex
-echo   dmake texturex -make
-echo   dmake texturex -fresh
 echo.
 exit /b 0

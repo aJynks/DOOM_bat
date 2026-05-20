@@ -11,7 +11,7 @@ $sourcePort_exes = @{
     "kex"    = "d:\Projects\DoomProjects\_SourcePorts\Kex-Doom\DOOM + DOOM II\doom_gog.exe"
     "nugget" = "d:\Projects\DoomProjects\_SourcePorts\Nugget-Doom\nugget-doom.exe"
     "nyan"   = "d:\Projects\DoomProjects\_SourcePorts\Nyan-Doom\nyan-doom.exe"
-    "retro"  = ""
+    "retro"  = "d:\Projects\DoomProjects\_SourcePorts\Reto-Doom\doomretro.exe"
     "uz"     = "d:\Projects\DoomProjects\_SourcePorts\uzDoom\uzdoom.exe"
     "woof"   = "d:\Projects\DoomProjects\_SourcePorts\Woof-Doom\woof.exe"
 }
@@ -344,6 +344,55 @@ function Ensure-KexSkipMovies {
 }
 
 #-------------------------------------------------------------------------------------------------
+# WAD load command helper
+# Chocolate Doom and CRL need -merge for vanilla-style resource merging.
+# Other ports keep the normal -file behavior.
+
+function Get-LoadCommand {
+    param([string]$PortName)
+
+    switch ($PortName.ToLowerInvariant()) {
+        "choco" { return "-merge" }
+        "crl"   { return "-merge" }
+        default { return "-file" }
+    }
+}
+
+
+#-------------------------------------------------------------------------------------------------
+# Debug launch helper
+
+function Format-CommandArg {
+    param([object]$Arg)
+
+    if ($null -eq $Arg) { return '""' }
+    $s = $Arg.ToString()
+    if ($s -eq "") { return '""' }
+
+    # Quote anything with whitespace or shell-sensitive characters.
+    if ($s -match '[\s&()\[\]{}^=;!''+,`~]') {
+        return '"' + ($s -replace '"', '\\"') + '"'
+    }
+
+    return $s
+}
+
+function Invoke-DoomWithDebug {
+    param(
+        [string]$ExePath,
+        [object[]]$ArgList
+    )
+
+    Write-Host ""
+    Write-Host "== Final Doom command ==" -ForegroundColor Yellow
+    $pretty = (Format-CommandArg $ExePath) + " " + (($ArgList | ForEach-Object { Format-CommandArg $_ }) -join " ")
+    Write-Host $pretty -ForegroundColor Cyan
+    Write-Host ""
+
+    & $ExePath @ArgList
+}
+
+#-------------------------------------------------------------------------------------------------
 # ASCII menu selector (Clear-Host redraw, stable)
 
 function Select-FromListAscii {
@@ -613,6 +662,7 @@ if ($hasDoomMakeProject) {
     $addPakWads = @()
     $usedPakNames = @()
     $inAddMode = $false
+    $portExplicitlySet = $false
 
     foreach ($arg in $command_raw) {
 
@@ -633,6 +683,7 @@ if ($hasDoomMakeProject) {
         if ($sourcePort_exes.ContainsKey($arg)) {
             $usedPort = $sourcePort_exes[$arg]
             $usedPortName = $arg
+            $portExplicitlySet = $true
             continue
         }
 
@@ -660,9 +711,9 @@ if ($hasDoomMakeProject) {
     }
 
     # Apply defaultPort from conf ONLY if user did not specify a port on the CLI
-    if (-not [string]::IsNullOrWhiteSpace($loader.defaultport)) {
+    if (-not [string]::IsNullOrWhiteSpace($loader.defaultport) -and -not $portExplicitlySet) {
         $confPort = $loader.defaultport.ToLowerInvariant()
-        if ($sourcePort_exes.ContainsKey($confPort) -and $usedPortName -eq $defaultPortName) {
+        if ($sourcePort_exes.ContainsKey($confPort)) {
             $usedPortName = $confPort
             $usedPort     = $sourcePort_exes[$confPort]
         }
@@ -694,20 +745,21 @@ if ($hasDoomMakeProject) {
     # release is REQUIRED
     Validate-Path $releasePath "Project WAD" "release"
 
-    # dehacked is OPTIONAL: only use it if it exists
-    $dehackedPath = $null
-    if (-not [string]::IsNullOrWhiteSpace($loader.dehacked)) {
-        $candidate = Join-Path $cwd $loader.dehacked
+    # Chocolate Doom / CRL need the compiled DEH loaded separately.
+    # This intentionally checks ./build/dehacked.deh, not the dehacked WAD entry.
+    $dehackedDehPath = $null
+    if ($usedPortName -in @("choco", "crl")) {
+        $candidate = Join-Path $cwd "./build/dehacked.deh"
         if (Test-Path -LiteralPath $candidate) {
-            $dehackedPath = $candidate
+            $dehackedDehPath = $candidate
         }
     }
 
-    # Build -file list: pak(s) first, then release, then (optional) dehacked, then --add pak(s) last
+    # Build PWAD merge/file list: pak(s) first, then release, then --add pak(s) last.
+    # The .deh patch is NOT put in this list; it is appended as -deh after the PWADs.
     $fileList = @()
     if ($pakWads.Count -gt 0) { $fileList += $pakWads }
     $fileList += $releasePath
-    if ($dehackedPath -ne $null) { $fileList += $dehackedPath }
     if ($addPakWads.Count -gt 0) { $fileList += $addPakWads }
 
     if ($menuMode) {
@@ -736,7 +788,15 @@ if ($hasDoomMakeProject) {
     # KEX-only: append -skipmovies at the END of the final command args
     $filteredArgs = Ensure-KexSkipMovies -PortName $usedPortName -ArgsList $filteredArgs
 
-    & $usedPort -iwad $usediWad -file @fileList @filteredArgs
+    $loadCmd = Get-LoadCommand -PortName $usedPortName
+
+    $launchArgs = @("-iwad", $usediWad, $loadCmd) + $fileList
+    if ($dehackedDehPath -ne $null) {
+        $launchArgs += @("-deh", $dehackedDehPath)
+    }
+    $launchArgs += $filteredArgs
+
+    Invoke-DoomWithDebug -ExePath $usedPort -ArgList $launchArgs
     exit
 }
 
@@ -838,13 +898,16 @@ if ($pakWads.Count -gt 0 -or $null -ne $wadFullPath -or $addPakWads.Count -gt 0)
     # KEX-only: append -skipmovies at the END of the final command args
     $filteredArgs = Ensure-KexSkipMovies -PortName $usedPortName -ArgsList $filteredArgs
 
-    & $usedPort -iwad $usediWad -file @fileList @filteredArgs
+    $loadCmd = Get-LoadCommand -PortName $usedPortName
+    $launchArgs = @("-iwad", $usediWad, $loadCmd) + $fileList + $filteredArgs
+    Invoke-DoomWithDebug -ExePath $usedPort -ArgList $launchArgs
 }
 else {
     # KEX-only: append -skipmovies at the END of the final command args
     $filteredArgs = Ensure-KexSkipMovies -PortName $usedPortName -ArgsList $filteredArgs
 
-    & $usedPort -iwad $usediWad @filteredArgs
+    $launchArgs = @("-iwad", $usediWad) + $filteredArgs
+    Invoke-DoomWithDebug -ExePath $usedPort -ArgList $launchArgs
 }
 
 exit
