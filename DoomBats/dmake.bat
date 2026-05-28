@@ -46,7 +46,8 @@ for %%A in (%*) do (
     if /I "%%~A"=="create"   goto do_create
     if /I "%%~A"=="explode"  goto do_explode
     if /I "%%~A"=="watch"    goto do_watch
-    if /I "%%~A"=="texturex" goto do_texturex
+    if /I "%%~A"=="texturex"  goto do_texturex
+    if /I "%%~A"=="editpatch" goto do_editpatch
 )
 
 rem ---- Help triggers ------------------------------------------------------------
@@ -331,6 +332,20 @@ if defined TEXTUREX_MAKE (
 exit /b 0
 
 
+:do_editpatch
+rem ---- EditPatch mode (standalone) -----------------------------------------------
+set "EDITPATCH_TXT="
+for %%A in (%*) do (
+    if /I "%%~A"=="-txt" set "EDITPATCH_TXT=1"
+)
+if defined EDITPATCH_TXT (
+    wadtex --gui
+) else (
+    wadtex --gui-editor
+)
+exit /b %ERRORLEVEL%
+
+
 :help
 echo.
 echo ==============================================================================
@@ -351,6 +366,10 @@ echo       doomtools --update-cleanup
 echo       doomtools --update-shell
 echo       doomtools --update-docs
 echo.
+echo     If ANY argument is "editpatch", ALL other arguments are ignored and:
+echo       wadtex --gui-editor is launched
+echo       With -txt: wadtex --gui is launched instead
+echo.
 echo     If ANY argument is "create", ALL other arguments are ignored and:
 echo       create mode is entered
 echo.
@@ -366,6 +385,7 @@ echo.
 echo USAGE
 echo   dmake [doommake_args...] [-- [doom_args...]]
 echo   dmake update
+echo   dmake editpatch [-txt]
 echo   dmake create ProjectName [-i iwad] [-d folder]
 echo   dmake explode filename.wad [-i iwad] [-p]
 echo   dmake watch
@@ -410,6 +430,8 @@ echo   dmake explode summoner.wad -p
 echo   dmake explode summoner.wad -i tnt -p
 echo   dmake -- -skill 4 -warp 1
 echo   dmake update
+echo   dmake editpatch
+echo   dmake editpatch -txt
 echo   dmake watch
 echo   dmake texturex
 echo   dmake texturex -make
