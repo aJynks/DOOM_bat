@@ -120,8 +120,7 @@ Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-playpal-all.txt" -D
 # ----------------------------------------------------------------------------
 Copy-FileTemplate -SourceFile "doommake-tweak-FILE_COMPLVL.txt" -DestPath ".\src\assets\_global" -Prefix "FILE_"
 Copy-FileTemplate -SourceFile "doommake-tweak-FILE_UMAPINFO.txt" -DestPath ".\src\assets\_global" -Prefix "FILE_"
-Copy-FileTemplate -SourceFile "doommake-tweak-FILE_runUDB.bat" -DestPath ".\" -Prefix "FILE_"
-Copy-FileTemplate -SourceFile "doommake-tweak-FILE_runUDB.ps1" -DestPath ".\" -Prefix "FILE_"
+Copy-FileTemplate -SourceFile "doommake-tweak-FILE_doom1-playpal.cube" -DestPath ".\" -Prefix "FILE_"
 
 # ----------------------------------------------------------------------------
 # DECO Templates - Copy to .\src\decohack\
@@ -317,6 +316,46 @@ if ($scriptContent -notmatch 'function doAllNoPatch') {
 }
 
 # ============================================================================
+# STEP 7b: Remove doDist() from make entry target
+# ============================================================================
+
+Write-Host ""
+Write-Host "STEP 7b: Removing doDist() from make entry target..." -ForegroundColor Cyan
+
+$scriptContent = Get-Content $scriptPath -Raw
+
+$oldMake = "check entry make(args) {`r`n`tdoInit();`r`n`tdoAll();`r`n`tdoRelease();`r`n`tdoDist();`r`n}"
+$newMake = "check entry make(args) {`r`n`tdoInit();`r`n`tdoAll();`r`n`tdoRelease();`r`n}"
+
+if ($scriptContent -match [regex]::Escape($oldMake)) {
+    $scriptContent = $scriptContent -replace [regex]::Escape($oldMake), $newMake
+    [System.IO.File]::WriteAllText($scriptPath, $scriptContent, $utf8NoBom)
+    Write-Host "  [Modified] Removed doDist() from make entry target" -ForegroundColor Green
+} else {
+    Write-Host "  [Skipped] doDist() not found in make entry target (already removed?)" -ForegroundColor Yellow
+}
+
+# ============================================================================
+# STEP 7c: Add doDist() to release entry target
+# ============================================================================
+
+Write-Host ""
+Write-Host "STEP 7c: Adding doDist() to release entry target..." -ForegroundColor Cyan
+
+$scriptContent = Get-Content $scriptPath -Raw
+
+$oldRelease = "check entry release(args) {`r`n`tdoInit();`r`n`tdoAll();`r`n`tdoRelease();`r`n}"
+$newRelease = "check entry release(args) {`r`n`tdoInit();`r`n`tdoAll();`r`n`tdoRelease();`r`n`tdoDist();`r`n}"
+
+if ($scriptContent -match [regex]::Escape($oldRelease)) {
+    $scriptContent = $scriptContent -replace [regex]::Escape($oldRelease), $newRelease
+    [System.IO.File]::WriteAllText($scriptPath, $scriptContent, $utf8NoBom)
+    Write-Host "  [Modified] Added doDist() to release entry target" -ForegroundColor Green
+} else {
+    Write-Host "  [Skipped] release entry target not found in expected form (already modified?)" -ForegroundColor Yellow
+}
+
+# ============================================================================
 # STEP 8: Initialize Project
 # ============================================================================
 
@@ -339,13 +378,28 @@ Write-Host "==========================================" -ForegroundColor DarkCya
 Write-Host "== Tweak Complete! =======================" -ForegroundColor Green
 Write-Host "==========================================" -ForegroundColor DarkCyan
 Write-Host ""
-Write-Host "New build targets available:" -ForegroundColor White
-Write-Host "  - doommake deco               (build a dehacked-only WAD)" -ForegroundColor Yellow
-Write-Host "  - doommake fresh              (clean the build dir + then a full rebuild)" -ForegroundColor Yellow
-Write-Host "  - doommake nopatch            (build Full Release with no DeHackEd)" -ForegroundColor Yellow
-Write-Host "  - doommake udbrestricted      (build a texture wad for UDB with restricted textures)" -ForegroundColor Yellow
-Write-Host "  - doommake udball             (build a texture wad for UDB with all textures.)" -ForegroundColor Yellow
-Write-Host "  - doommake udb                (build a both restricted and all UDB texture wads)" -ForegroundColor Yellow
-Write-Host "  - doommake playpal            (build a wad containing only the playpal, primary colourmaps and boom-style colourmaps)" -ForegroundColor Yellow
-Write-Host "  - doommake release1           (build a release wad but do not create any other wads. Good for palette testing!)" -ForegroundColor Yellow
+Write-Host "DEFAULT targets:" -ForegroundColor White
+Write-Host "  doommake all               - Build all project components (no release WAD)" -ForegroundColor Gray
+Write-Host "  doommake assets            - Convert and merge assets WAD" -ForegroundColor Gray
+Write-Host "  doommake clean             - Delete the build directory" -ForegroundColor Gray
+Write-Host "  doommake convert           - Convert graphics, sprites, sounds and palettes" -ForegroundColor Gray
+Write-Host "  doommake converttextures   - Convert texture flats and patches to Doom format" -ForegroundColor Gray
+Write-Host "  doommake editor            - Rebuild the editor WAD" -ForegroundColor Gray
+Write-Host "  doommake init              - Initialise the build directory" -ForegroundColor Gray
+Write-Host "  doommake make              - Full build and create release WAD (no zip)" -ForegroundColor Gray
+Write-Host "  doommake maps              - Merge the maps WAD" -ForegroundColor Gray
+Write-Host "  doommake maptextures       - Export a WAD of only textures used in maps" -ForegroundColor Gray
+Write-Host "  doommake patch             - Compile the DeHackEd patch and show budget" -ForegroundColor Gray
+Write-Host "  doommake rebuildpalettes   - Rebuild primary palettes and colormaps" -ForegroundColor Gray
+Write-Host "  doommake rebuildtextures   - Rebuild texture listings in src/textures" -ForegroundColor Gray
+Write-Host "  doommake textures          - Convert and merge textures WAD" -ForegroundColor Gray
+Write-Host ""
+Write-Host "TWEAK targets:" -ForegroundColor White
+Write-Host "  doommake deco              - Compile DECOHack and build a DEHACKED-only WAD" -ForegroundColor Yellow
+Write-Host "  doommake fresh             - Clean build dir then do a full rebuild" -ForegroundColor Yellow
+Write-Host "  doommake nopatch           - Full build and release WAD without DECOHack/DeHackEd" -ForegroundColor Yellow
+Write-Host "  doommake playpal           - Convert palettes and colormaps into a palette-only WAD" -ForegroundColor Yellow
+Write-Host "  doommake release           - Full build, create release WAD and zip for distribution" -ForegroundColor Yellow
+Write-Host "  doommake texall            - Build texture WAD with ALL textures (for UDB)" -ForegroundColor Yellow
+Write-Host "  doommake texrestricted     - Build texture WAD with only project textures (for UDB)" -ForegroundColor Yellow
 Write-Host ""

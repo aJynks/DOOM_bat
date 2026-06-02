@@ -42,21 +42,22 @@ rem ============================================================================
 
 rem ---- Scan ALL arguments for special commands ----------------------------------
 for %%A in (%*) do (
-    if /I "%%~A"=="update"   goto do_update
-    if /I "%%~A"=="create"   goto do_create
-    if /I "%%~A"=="explode"  goto do_explode
-    if /I "%%~A"=="watch"    goto do_watch
+    if /I "%%~A"=="update"    goto do_update
+    if /I "%%~A"=="create"    goto do_create
+    if /I "%%~A"=="explode"   goto do_explode
+    if /I "%%~A"=="watch"     goto do_watch
     if /I "%%~A"=="texturex"  goto do_texturex
     if /I "%%~A"=="editpatch" goto do_editpatch
+    if /I "%%~A"=="--targets" goto do_targets
 )
 
 rem ---- Help triggers ------------------------------------------------------------
 if "%~1"=="" goto main
-if /I "%~1"=="--help" goto help
-if /I "%~1"=="-h" goto help
-if /I "%~1"=="/h" goto help
-if /I "%~1"=="/?" goto help
-if /I "%~1"=="help" goto help
+if /I "%~1"=="--help" goto do_help
+if /I "%~1"=="-h"     goto do_help
+if /I "%~1"=="/h"     goto do_help
+if /I "%~1"=="/?"     goto do_help
+if /I "%~1"=="help"   goto do_help
 
 :main
 rem ---- Split arguments ----------------------------------------------------------
@@ -94,6 +95,26 @@ if defined SEEN_DASHDASH (
 )
 
 exit /b 0
+
+:do_help
+rem ---- Help (standalone) --------------------------------------------------------
+for /f "delims=" %%P in ('where dmake-help.ps1 2^>nul') do set "HELP_SCRIPT=%%P" & goto found_help
+echo Error: dmake-help.ps1 not found on PATH.
+exit /b 2
+:found_help
+powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%HELP_SCRIPT%"
+exit /b 0
+
+
+:do_targets
+rem ---- Custom targets help (standalone) -----------------------------------------
+for /f "delims=" %%P in ('where dmake-targethelp.ps1 2^>nul') do set "TARGETS_SCRIPT=%%P" & goto found_targets
+echo Error: dmake-targethelp.ps1 not found on PATH.
+exit /b 2
+:found_targets
+powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%TARGETS_SCRIPT%"
+exit /b 0
+
 
 :do_update
 rem ---- DoomTools update chain (standalone; ignore all other args) ----------------
@@ -344,97 +365,3 @@ if defined EDITPATCH_TXT (
     wadtex --gui-editor
 )
 exit /b %ERRORLEVEL%
-
-
-:help
-echo.
-echo ==============================================================================
-echo  DMAKE.BAT
-echo  doommake wrapper with optional doom.bat launch
-echo ==============================================================================
-echo.
-echo DESCRIPTION
-echo   dmake forwards arguments to doommake.
-echo.
-echo   If "--" is present, doom.bat is run AFTER doommake
-echo   and receives the remaining arguments.
-echo.
-echo   SPECIAL BEHAVIOUR:
-echo     If ANY argument is "update", ALL other arguments are ignored and:
-echo       doomtools --update
-echo       doomtools --update-cleanup
-echo       doomtools --update-shell
-echo       doomtools --update-docs
-echo.
-echo     If ANY argument is "editpatch", ALL other arguments are ignored and:
-echo       wadtex --gui-editor is launched
-echo       With -txt: wadtex --gui is launched instead
-echo.
-echo     If ANY argument is "create", ALL other arguments are ignored and:
-echo       create mode is entered
-echo.
-echo     If ANY argument is "explode", ALL other arguments are ignored and:
-echo       explode mode is entered
-echo.
-echo     If ANY argument is "watch", ALL other arguments are ignored and:
-echo       watch mode is entered (must be run from a DoomTools project root)
-echo.
-echo     If ANY argument is "texturex", ALL other arguments are ignored and:
-echo       texturex mode is entered (must be run from a DoomTools project root)
-echo.
-echo USAGE
-echo   dmake [doommake_args...] [-- [doom_args...]]
-echo   dmake update
-echo   dmake editpatch [-txt]
-echo   dmake create ProjectName [-i iwad] [-d folder]
-echo   dmake explode filename.wad [-i iwad] [-p]
-echo   dmake watch
-echo   dmake texturex
-echo.
-echo CREATE MODE OPTIONS
-echo   ProjectName              Name of the project to create
-echo   -i iwad                  IWAD to use (default: doom2)
-echo                            Options: doom, doom2, tnt, plutonia, heretic,
-echo                                     hexen, free1, free2
-echo   -d folder                Directory to create project in (optional)
-echo.
-echo EXPLODE MODE OPTIONS
-echo   filename.wad             WAD file to explode
-echo   -i iwad                  IWAD to use (default: doom2)
-echo                            Options: doom, doom2, tnt, plutonia, heretic,
-echo                                     hexen, free1, free2
-echo   -p                       Use input WAD's own PLAYPAL for palette conversion
-echo                            instead of the IWAD (for WADs with custom palettes)
-echo.
-echo WATCH MODE
-echo   Monitors the project for file changes and rebuilds automatically.
-echo   Must be run from the root of a DoomTools project (requires
-echo   doommake.script, doommake.project.properties, and
-echo   doommake.properties to be present in the current directory).
-echo.
-echo TEXTUREX MODE
-echo   Exports TEXTURE1 data from the built textures WAD to the source text file.
-echo   Runs: wadtex ./build/textures.wad --export ./src/textures/texture1.txt
-echo   Must be run from the root of a DoomTools project.
-echo.
-echo   -make    After a successful export, run doommake make
-echo   -fresh   After a successful export, run doommake clean then doommake make
-echo.
-echo EXAMPLES
-echo   dmake create MyWAD
-echo   dmake create MyWAD -i doom -d projects
-echo   dmake create TestWAD -d "_01"
-echo   dmake explode summoner.wad
-echo   dmake explode summoner.wad -i tnt
-echo   dmake explode summoner.wad -p
-echo   dmake explode summoner.wad -i tnt -p
-echo   dmake -- -skill 4 -warp 1
-echo   dmake update
-echo   dmake editpatch
-echo   dmake editpatch -txt
-echo   dmake watch
-echo   dmake texturex
-echo   dmake texturex -make
-echo   dmake texturex -fresh
-echo.
-exit /b 0
