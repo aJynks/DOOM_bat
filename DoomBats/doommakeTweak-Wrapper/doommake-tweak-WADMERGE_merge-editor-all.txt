@@ -1,0 +1,31 @@
+# ===========================================================================
+# WadMerge Script — ALL-textures Editor Assets WAD
+# ===========================================================================
+# Builds editor-assets-all.wad: the same component WADs as the normal editor
+# assets WAD, but using textures-All.wad in place of textures.wad, so the full
+# (unrestricted) TEXTURE1 set is available while editing. Never touches
+# textures.wad. Overwrites the output in place (create/finish), or creates it.
+#
+# Build inputs (all produced by doAll()):
+#   $0/dehacked.wad      - DEHACKED-only WAD (from doDehWad)
+#   $0/assets.wad        - project assets
+#   $0/textures-All.wad  - ALL texture set (from doTexturesAll)
+#
+# Argument 0: The build directory.
+# Argument 1: The source directory. (unused; kept for arg-order consistency)
+# Argument 2: The output WAD name (editor-assets-all.wad)
+# ===========================================================================
+
+create out
+
+# DeHackEd (DEHACKED lump)
+mergewad out $0/dehacked.wad
+
+# Project assets (sprites, flats, graphics, sounds, music, colormaps, etc.)
+mergewad out $0/assets.wad
+
+# Textures — ALL set, instead of the Restricted textures.wad
+mergewad out $0/textures-All.wad
+
+finish out $0/$2
+end

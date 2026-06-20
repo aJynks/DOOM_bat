@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 set ROOT=D:\tmp\doomtools-dev
-set REPO=%ROOT%\git
+set REPO=%ROOT%\git\DoomTools
 set RELEASE=%ROOT%\release
 set GITURL=https://github.com/MTrop/DoomTools.git
 
@@ -25,7 +25,7 @@ echo =====================================
 echo.
 
 REM ------------------------------------------------------------
-REM Ensure base directories exist (create each level explicitly)
+REM Ensure base directories exist
 REM ------------------------------------------------------------
 
 if not exist "D:\tmp" mkdir "D:\tmp"
@@ -84,18 +84,14 @@ REM ------------------------------------------------------------
 
 echo [INFO] Setup mode
 
-REM Ensure gsudo exists first (needed to elevate)
+REM Ensure gsudo exists first
 where gsudo >nul 2>nul
 if errorlevel 1 (
     echo [INFO] Installing gsudo...
     choco install gsudo -y
-    if errorlevel 1 (
-        echo [ERROR] Could not install gsudo. Is Chocolatey installed?
-        goto fail
-    )
 )
 
-REM Relaunch elevated if not already admin
+REM Relaunch elevated if needed
 net session >nul 2>&1
 if errorlevel 1 (
     echo [INFO] Requesting admin privileges...
@@ -103,71 +99,27 @@ if errorlevel 1 (
     exit /b %errorlevel%
 )
 
-REM ------------------------------------------------------------
-REM Stage tracking
-REM ------------------------------------------------------------
-
-set STAGE_GIT=PENDING
-set STAGE_JAVA=PENDING
-set STAGE_ANT=PENDING
-set STAGE_GSUDO=PENDING
-set STAGE_CLONE=PENDING
-set STAGE_DEPS=PENDING
-
 echo.
 echo [INFO] Installing prerequisites...
 
-REM --- git ---
 choco install git -y
-if errorlevel 1 (
-    set STAGE_GIT=FAILED
-) else (
-    set STAGE_GIT=OK
-)
+if errorlevel 1 goto fail
 
-REM --- temurin (Java) - retry up to 3 times ---
-set JAVA_ATTEMPT=0
-:temurin_retry
-set /a JAVA_ATTEMPT+=1
-echo [INFO] Installing temurin (attempt !JAVA_ATTEMPT! of 3)...
 choco install temurin -y
-if errorlevel 1 (
-    if !JAVA_ATTEMPT! LSS 3 (
-        echo [WARN] temurin install failed, retrying...
-        timeout /t 5 /nobreak >nul
-        goto temurin_retry
-    )
-    set STAGE_JAVA=FAILED
-) else (
-    set STAGE_JAVA=OK
-)
+if errorlevel 1 goto fail
 
-REM --- ant ---
 choco install ant -y
-if errorlevel 1 (
-    set STAGE_ANT=FAILED
-) else (
-    set STAGE_ANT=OK
-)
+if errorlevel 1 goto fail
 
-REM --- gsudo ---
 choco install gsudo -y
-if errorlevel 1 (
-    REM already installed counts as OK
-    set STAGE_GSUDO=OK
-) else (
-    set STAGE_GSUDO=OK
-)
+if errorlevel 1 goto fail
 
-REM Refresh PATH so git/ant/java are available in this session
-echo.
-echo [INFO] Refreshing environment...
-call refreshenv 2>nul
+REM Refresh environment
+call refreshenv >nul 2>nul
 
 echo.
 echo [INFO] Preparing repository...
 
-REM --- clone ---
 if not exist "%REPO%\.git" (
 
     if exist "%REPO%" (
@@ -177,69 +129,23 @@ if not exist "%REPO%\.git" (
 
     echo [INFO] Cloning repository...
     git clone %GITURL% "%REPO%"
-    if errorlevel 1 (
-        set STAGE_CLONE=FAILED
-    ) else (
-        set STAGE_CLONE=OK
-    )
-) else (
-    echo [INFO] Repo already exists, skipping clone.
-    set STAGE_CLONE=OK
+    if errorlevel 1 goto fail
 )
 
-REM --- dependencies ---
-if "%STAGE_CLONE%"=="OK" (
-    cd /d "%REPO%"
-    echo.
-    echo [INFO] Installing DoomTools dependencies...
-    call ant dependencies
-    if errorlevel 1 (
-        set STAGE_DEPS=FAILED
-    ) else (
-        set STAGE_DEPS=OK
-    )
-) else (
-    set STAGE_DEPS=SKIPPED
-)
+cd /d "%REPO%"
 
-REM ------------------------------------------------------------
-REM Setup report
-REM ------------------------------------------------------------
+echo.
+echo [INFO] Installing DoomTools dependencies...
+call ant dependencies
+if errorlevel 1 goto fail
 
 echo.
 echo =====================================
-echo SETUP REPORT
-echo =====================================
-echo   git          : %STAGE_GIT%
-echo   java/temurin : %STAGE_JAVA%
-echo   ant          : %STAGE_ANT%
-echo   gsudo        : %STAGE_GSUDO%
-echo   repo clone   : %STAGE_CLONE%
-echo   dependencies : %STAGE_DEPS%
-echo =====================================
-
-REM Fail if any critical stage failed
-if "%STAGE_GIT%"=="FAILED"   goto setup_fail
-if "%STAGE_JAVA%"=="FAILED"  goto setup_fail
-if "%STAGE_ANT%"=="FAILED"   goto setup_fail
-if "%STAGE_CLONE%"=="FAILED" goto setup_fail
-if "%STAGE_DEPS%"=="FAILED"  goto setup_fail
-
-echo.
-echo =====================================
-echo SETUP SUCCESSFUL
+echo SETUP COMPLETE
 echo Run:
 echo     build-doomtools.bat
 echo =====================================
 goto success
-
-:setup_fail
-echo.
-echo =====================================
-echo SETUP INCOMPLETE - see report above
-echo =====================================
-pause
-exit /b 1
 
 :success
 exit /b 0
