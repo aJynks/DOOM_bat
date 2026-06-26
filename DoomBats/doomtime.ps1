@@ -1,4 +1,4 @@
-# doomtime.ps1 - Doom Floor/Ceiling Movement Calculator
+# doomtime.ps1 - Doom Floor/Ceiling Raise/Lower Timing Calculator
 param(
     [string]$ArgString = ""
 )
@@ -15,11 +15,11 @@ $Speeds = [ordered]@{
 function Show-Help {
     Write-Host ""
     Write-Host "  DOOMTIME" -ForegroundColor Red -NoNewline
-    Write-Host " - Doom Floor/Ceiling Movement Calculator" -ForegroundColor White
-    Write-Host "  A tool for calculating Doom floor and ceiling movement distances and times." -ForegroundColor DarkGray
+    Write-Host " - Doom Floor/Ceiling Raise/Lower Timing Calculator" -ForegroundColor White
+    Write-Host "  A tool for calculating how far a floor or ceiling raises/lowers and how long it takes." -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  Doom runs at 35 tics per second." -ForegroundColor DarkGray
-    Write-Host "  Floor/Ceiling speeds " -ForegroundColor DarkGray -NoNewline
+    Write-Host "  Raise/lower speeds " -ForegroundColor DarkGray -NoNewline
     Write-Host "(map units per tic)" -ForegroundColor DarkGray
     Write-Host "    slow   " -ForegroundColor Yellow -NoNewline
     Write-Host "= 1 u/tic" -ForegroundColor DarkGray
@@ -45,18 +45,12 @@ function Show-Help {
     Write-Host "Calculate time to move a given distance" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  EXAMPLES" -ForegroundColor White
-    Write-Host "    doomtime -time 30     " -ForegroundColor Yellow -NoNewline
-    Write-Host "Floor moving for 30 seconds - how far does it travel?" -ForegroundColor DarkGray
-    Write-Host "    doomtime -t 30        " -ForegroundColor Yellow -NoNewline
-    Write-Host "Same as above (short form)" -ForegroundColor DarkGray
-    Write-Host "    doomtime -minutes 2   " -ForegroundColor Yellow -NoNewline
-    Write-Host "Floor moving for 2 minutes - how far does it travel?" -ForegroundColor DarkGray
-    Write-Host "    doomtime -m 2         " -ForegroundColor Yellow -NoNewline
-    Write-Host "Same as above (short form)" -ForegroundColor DarkGray
+    Write-Host "    doomtime -time 30        " -ForegroundColor Yellow -NoNewline
+    Write-Host "Floor/ceiling raising or lowering for 30 seconds - how many units?" -ForegroundColor DarkGray
+    Write-Host "    doomtime -minutes 2      " -ForegroundColor Yellow -NoNewline
+    Write-Host "Floor/ceiling raising or lowering for 2 minutes - how many units?" -ForegroundColor DarkGray
     Write-Host "    doomtime -distance 1050  " -ForegroundColor Yellow -NoNewline
-    Write-Host "Floor moving 1050 units - how long does it take?" -ForegroundColor DarkGray
-    Write-Host "    doomtime -d 1050      " -ForegroundColor Yellow -NoNewline
-    Write-Host "Same as above (short form)" -ForegroundColor DarkGray
+    Write-Host "Floor/ceiling raising or lowering 1050 units - how long does it take?" -ForegroundColor DarkGray
     Write-Host ""
 }
 function Show-Time($seconds, $label) {
