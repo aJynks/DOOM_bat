@@ -6,11 +6,11 @@ Modes:
   texx --convert input [-o out.txt]                        (-c)
       Convert texture definitions to a DoomTools/DEUTEX-style text file.
 
-  texx --compare in1 in2 ... [--filter f ...] [-o out]     (-cmp)
+  texx --merge in1 in2 ... [--filter f ...] [-o out]       (-m)
       Merge all inputs into one file of unique texture definitions
       (default: unique-textureX.txt).
 
-  texx --subtract base.txt other1 ... [--filter f ...]     (-sub)
+  texx --subtract base.txt other1 ... [--filter f ...]     (-s)
       Copy of base.txt with every texture removed that is identical
       (name + layout) to a definition in the others or the filter
       (default output: <basestem>-subtracted.txt).
@@ -26,14 +26,14 @@ Accepted inputs (auto-detected by content, not extension):
   * SLADE TEXTURES txt  — WallTexture "NAME", W, H { Patch "NAME", x, y }
   * DoomTools/DEUTEX txt — NAME W H  /  *<tab>PATCH X Y
 
-Compare rules:
+Merge rules:
   * Texture identity = name + width/height + full patch layout
     (patch names, order, X/Y offsets).
   * Identical name+layout seen again  -> skipped (first input wins).
   * Same name, different layout       -> kept, renamed: trailing number is
     incremented (stem truncated if 8 chars would be exceeded, e.g.
     TESTIT99 -> TESTI100); names without a trailing number get one appended.
-  * --filter inputs: any compare texture identical (name+layout) to a filter
+  * --filter inputs: any merge texture identical (name+layout) to a filter
     definition is dropped. Same name but different layout than the filter
     version is kept under its ORIGINAL name (stock-texture replacement).
 
@@ -325,14 +325,14 @@ def do_convert(input_path, out_path):
     print(f"Wrote: {out_path}")
 
 
-def do_compare(input_paths, filter_paths, out_path):
+def do_merge(input_paths, filter_paths, out_path):
     # Filter set: name -> set of layouts
     filter_defs = {}
     for fp in filter_paths:
         for t in load_input(fp):
             filter_defs.setdefault(t.name, set()).add(t.layout())
 
-    # Gather all compare textures in command-line order
+    # Gather all merge textures in command-line order
     all_textures = []
     for ip in input_paths:
         batch = load_input(ip)
@@ -365,7 +365,7 @@ def do_compare(input_paths, filter_paths, out_path):
             seen.add(t.layout())
             output.append(t)
 
-    write_deutex(out_path, output, "compare", input_paths, filter_paths)
+    write_deutex(out_path, output, "merge", input_paths, filter_paths)
 
     print()
     if renamed:
@@ -500,15 +500,15 @@ def main():
         epilog="examples:\n"
                "  texx -c mywad.wad\n"
                "  texx -c slade-export.txt -o texture1.txt\n"
-               "  texx -cmp resource.wad map01.wad -f doom2.wad\n"
-               "  texx -sub mytex.txt other.wad -f doom2.wad\n"
+               "  texx -m resource.wad map01.wad -f doom2.wad\n"
+               "  texx -s mytex.txt other.wad -f doom2.wad\n"
                "  texx -fp texturex.txt -sd \"C:/patches\" -o picked\n")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("-c", "--convert", metavar="INPUT",
                       help="convert one input to a DEUTEX-style text file")
-    mode.add_argument("-cmp", "--compare", metavar="INPUT", nargs="+",
+    mode.add_argument("-m", "--merge", metavar="INPUT", nargs="+",
                       help="merge inputs into a file of unique texture definitions")
-    mode.add_argument("-sub", "--subtract", metavar="INPUT", nargs="+",
+    mode.add_argument("-s", "--subtract", metavar="INPUT", nargs="+",
                       help="base texturex.txt followed by inputs whose identical "
                            "definitions are removed from it")
     mode.add_argument("-fp", "--findPatches", "--findpatches", metavar="TEXTUREX",
@@ -516,7 +516,7 @@ def main():
                       help="copy patch files used by a texturex.txt out of "
                            "--sourcedir into the output directory")
     parser.add_argument("-f", "--filter", metavar="INPUT", nargs="+", default=[],
-                        help="definitions to exclude from --compare/--subtract "
+                        help="definitions to exclude from --merge/--subtract "
                              "output (identical name+layout matches are dropped)")
     parser.add_argument("-sd", "--sourcedir", metavar="DIR",
                         help="directory to scan recursively for patch files "
@@ -529,13 +529,13 @@ def main():
 
     if args.sourcedir and not args.findPatches:
         die("--sourcedir only applies to --findPatches")
-    if args.filter and not (args.compare or args.subtract):
-        die("--filter only applies to --compare and --subtract")
+    if args.filter and not (args.merge or args.subtract):
+        die("--filter only applies to --merge and --subtract")
 
     if args.convert:
         do_convert(args.convert, args.output or "texturex.txt")
-    elif args.compare:
-        do_compare(args.compare, args.filter, args.output or "unique-textureX.txt")
+    elif args.merge:
+        do_merge(args.merge, args.filter, args.output or "unique-textureX.txt")
     elif args.subtract:
         if len(args.subtract) < 2 and not args.filter:
             die("--subtract needs a base file plus at least one other input "
