@@ -47,6 +47,12 @@ $IWADS = @{
 $IWAD_LIST = 'doom, doom2, tnt, plutonia, heretic, hexen, free1, free2'
 
 # ==============================================================================
+# Editable DECOHack patch (hack) types
+# ==============================================================================
+$HACK_TYPES = @('doom19', 'udoom19', 'doomunity', 'boom', 'mbf', 'extended', 'mbf21', 'dsdhacked', 'id24')
+$HACK_TYPE_LIST = 'doom19, udoom19, doomunity, boom, mbf, extended, mbf21, dsdhacked, id24'
+
+# ==============================================================================
 # Helpers
 # ==============================================================================
 
@@ -81,6 +87,15 @@ function Publish-CdOut([string]$Dir) {
     }
 }
 
+# Returns $true if the directory is empty, or doesn't exist yet (nothing to
+# conflict with). Used to guard "create" so it never runs into an occupied
+# folder.
+function Test-DirEmpty([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return $true }
+    $items = Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    return (@($items).Count -eq 0)
+}
+
 # ==============================================================================
 # Mode: update  (standalone; ignores all other args)
 # ==============================================================================
@@ -97,16 +112,17 @@ function Invoke-UpdateMode {
 
 # ==============================================================================
 # Mode: create  (standalone)
-#   dmake create ProjectName [-i iwad] [-d folder]
+#   dmake create ProjectName [-i iwad] [-h hacktype] [-d folder]
 # ==============================================================================
 function Invoke-CreateMode([string[]]$Rest) {
     $ProjectName = $null
     $IwadName    = 'doom2'
+    $HackType    = 'dsdhacked'
     $DirName     = $null
 
     if ($Rest.Count -eq 0 -or [string]::IsNullOrEmpty($Rest[0])) {
         Write-Host 'Error: Project name required'
-        Write-Host 'Usage: dmake create ProjectName [-i iwad] [-d folder]'
+        Write-Host 'Usage: dmake create ProjectName [-i iwad] [-h hacktype] [-d folder]'
         exit 2
     }
 
@@ -119,6 +135,11 @@ function Invoke-CreateMode([string[]]$Rest) {
                 $IwadName = $Rest[$i + 1]
                 $i += 2
             }
+            '^(?i)-h$' {
+                if ($i + 1 -ge $Rest.Count) { Write-Host 'Error: -h requires a hack type'; exit 2 }
+                $HackType = $Rest[$i + 1]
+                $i += 2
+            }
             '^(?i)-d$' {
                 if ($i + 1 -ge $Rest.Count) { Write-Host 'Error: -d requires a directory name'; exit 2 }
                 $DirName = Normalize-DirPath $Rest[$i + 1]
@@ -128,18 +149,35 @@ function Invoke-CreateMode([string[]]$Rest) {
         }
     }
 
+    # Guard: never touch a non-empty target directory. Checked first, before
+    # anything else runs (no doommake, no directory creation, no tweak).
+    $TargetDir = if ($DirName) { $DirName } else { (Get-Location).Path }
+
+    if (-not (Test-DirEmpty $TargetDir)) {
+        Write-Host "Error: Directory is not empty: $TargetDir"
+        Write-Host "dmake create requires an empty target directory."
+        exit 2
+    }
+
     $IwadPath = $IWADS[$IwadName]
 
     Write-Host 'I am in create mode'
     Write-Host ''
     Write-Host "Project Name : $ProjectName"
     Write-Host "IWAD Path    : $IwadPath"
+    Write-Host "Hack Type    : $HackType"
     Write-Host "Directory    : $DirName"
     Write-Host ''
 
     if ([string]::IsNullOrEmpty($IwadPath)) {
         Write-Host "Error: IWAD path not found for: $IwadName"
         Write-Host "Available IWADs: $IWAD_LIST"
+        exit 2
+    }
+
+    if ($HACK_TYPES -notcontains $HackType) {
+        Write-Host "Error: Unknown hack type: $HackType"
+        Write-Host "Available hack types: $HACK_TYPE_LIST"
         exit 2
     }
 
@@ -151,18 +189,33 @@ function Invoke-CreateMode([string[]]$Rest) {
     }
 
     # Feed the interactive prompts (name, IWAD, patch type) via stdin
-    $ProjectName, $IwadPath, 'dsdhacked' |
+    $ProjectName, $IwadPath, $HackType |
         & doommake --project-type wad './' -n assets maps decohack texturesboom
     $createErr = $LASTEXITCODE
 
+    if ($createErr -ne 0) {
+        Write-Host "Error: doommake --project-type failed (exit $createErr). Skipping tweak." -ForegroundColor Red
+        if ($DirName) { Publish-CdOut (Get-Location).Path }
+        exit $createErr
+    }
+
     & doommake-tweak -IwadPath $IwadPath
+    $tweakErr = $LASTEXITCODE
+
+    if ($tweakErr -ne 0) {
+        Write-Host "Error: doommake-tweak failed (exit $tweakErr). Skipping doommake complete." -ForegroundColor Red
+        if ($DirName) { Publish-CdOut (Get-Location).Path }
+        exit $tweakErr
+    }
+
+    & doommake complete
 
     if ($DirName) {
         # Leave the calling shell inside the new directory (matches old dmake.bat)
         Publish-CdOut (Get-Location).Path
     }
 
-    exit $createErr
+    exit $LASTEXITCODE
 }
 
 # ==============================================================================
@@ -473,7 +526,7 @@ function Show-DmakeHelp {
     Write-Host ""
 
     Write-Host "SPECIAL COMMANDS" -ForegroundColor White
-    Write-Host "  create    " -ForegroundColor Cyan -NoNewline; Write-Host "ProjectName [-i iwad] [-d folder]  - Create a new tweaked DoomMake project"
+    Write-Host "  create    " -ForegroundColor Cyan -NoNewline; Write-Host "ProjectName [-i iwad] [-h hacktype] [-d folder] - Create a new tweaked DoomMake project"
     Write-Host "  explode   " -ForegroundColor Cyan -NoNewline; Write-Host "filename.wad [-i iwad] [-p]        - Explode a WAD into a DoomMake project"
     Write-Host "  watch     " -ForegroundColor Cyan -NoNewline; Write-Host "                                   - Watch project, rebuild on file changes"
     Write-Host "  texturex  " -ForegroundColor Cyan -NoNewline; Write-Host "[-x1|-x2] [-file wad] [-output txt] - Extract TEXTURE1/TEXTURE2 (both if neither)"
@@ -486,7 +539,10 @@ function Show-DmakeHelp {
     Write-Host "CREATE OPTIONS" -ForegroundColor White
     Write-Host "  -i iwad    " -ForegroundColor Yellow -NoNewline; Write-Host "IWAD to use (default: doom2)"
     Write-Host "             " -NoNewline; Write-Host "Options: " -ForegroundColor Gray -NoNewline; Write-Host "doom, doom2, tnt, plutonia, heretic, hexen, free1, free2" -ForegroundColor DarkGray
+    Write-Host "  -h hacktype" -ForegroundColor Yellow -NoNewline; Write-Host "DECOHack patch type to use (default: dsdhacked)"
+    Write-Host "             " -NoNewline; Write-Host "Options: " -ForegroundColor Gray -NoNewline; Write-Host "doom19, udoom19, doomunity, boom, mbf, extended, mbf21, dsdhacked, id24" -ForegroundColor DarkGray
     Write-Host "  -d folder  " -ForegroundColor Yellow -NoNewline; Write-Host "Directory to create the project in (optional)"
+    Write-Host "             " -NoNewline; Write-Host "Must be empty if it already exists (or the current dir, if omitted)" -ForegroundColor DarkGray
     Write-Host ""
 
     Write-Host "EXPLODE OPTIONS" -ForegroundColor White
@@ -547,26 +603,23 @@ function Show-TargetsHelp {
     Write-Host "  doommake converttextures   - Convert texture flats and patches to Doom format" -ForegroundColor Gray
     Write-Host "  doommake editor            - Rebuild the editor WAD" -ForegroundColor Gray
     Write-Host "  doommake init              - Initialise the build directory" -ForegroundColor Gray
-    Write-Host "  doommake make              - Full build, create release WAD and zip for distribution" -ForegroundColor Gray
+    Write-Host "  doommake make              - [MODIFIED] Full build + release WAD, no dist zip" -ForegroundColor Gray
     Write-Host "  doommake maps              - Merge the maps WAD" -ForegroundColor Gray
     Write-Host "  doommake maptextures       - Export a WAD of only textures used in maps" -ForegroundColor Gray
     Write-Host "  doommake patch             - Compile the DeHackEd patch and show budget" -ForegroundColor Gray
     Write-Host "  doommake rebuildpalettes   - Rebuild primary palettes and colormaps" -ForegroundColor Gray
     Write-Host "  doommake rebuildtextures   - Rebuild texture listings in src/textures" -ForegroundColor Gray
+    Write-Host "  doommake release           - [MODIFIED] Full build + release, dehacked & palette WADs, dist zip" -ForegroundColor Gray
     Write-Host "  doommake textures          - Convert and merge textures WAD" -ForegroundColor Gray
     Write-Host ""
     Write-Host "TWEAK targets:" -ForegroundColor White
+    Write-Host "  doommake complete          - Runs release, editorrelease, texturesrelease, playpal, deco (no zip)" -ForegroundColor Yellow
     Write-Host "  doommake deco              - Compile DECOHack and build a DEHACKED-only WAD" -ForegroundColor Yellow
-    Write-Host "  doommake editorall         - Editor-asset WAD with ALL textures" -ForegroundColor Yellow
-    Write-Host "  doommake editorrestricted  - Editor-asset WAD with RESTRICTED textures" -ForegroundColor Yellow
+    Write-Host "  doommake editorrelease     - Same as release, but ALL textures + only MAP99 (if present)" -ForegroundColor Yellow
+    Write-Host "  doommake final             - Same as complete, but also creates the dist zip" -ForegroundColor Yellow
     Write-Host "  doommake fresh             - Clean build dir, then full build and create release WAD" -ForegroundColor Yellow
-    Write-Host "  doommake nopatch           - Full build without DECOHack/DeHackEd" -ForegroundColor Yellow
     Write-Host "  doommake playpal           - Convert palettes and colormaps into a palette-only WAD" -ForegroundColor Yellow
-    Write-Host "  doommake release           - Full build, create release WAD (no zip)" -ForegroundColor Yellow
-    Write-Host "  doommake releasenopatch    - Full build without DECOHack/DeHackEd , create release WAD and zip for distribution" -ForegroundColor Yellow
-    Write-Host "  doommake texall            - Build texture WAD with ALL textures (for UDB)" -ForegroundColor Yellow
-    Write-Host "  doommake texrestricted     - Build texture WAD with RESTRICTED textures" -ForegroundColor Yellow
-    Write-Host "  doommake udb               - Builds UDB editor resources" -ForegroundColor Yellow
+    Write-Host "  doommake texturesrelease   - Standard texture WAD, plus wadinfo/credits and palette data" -ForegroundColor Yellow
     Write-Host ""
 }
 

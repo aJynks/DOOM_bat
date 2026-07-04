@@ -1,7 +1,8 @@
 # ============================================================================
 # doommake-tweak.ps1
 # ============================================================================
-# Tweaks a fresh DoomMake project to add custom build targets and functions
+# Tweaks a fresh DoomMake project — pre-step IWAD fix + template copy +
+# entry target replacement
 # ============================================================================
 
 param(
@@ -10,6 +11,50 @@ param(
 
 $ErrorActionPreference = "Stop"
 $base = Get-Location
+
+# ============================================================================
+# EDITABLE SECTION — everything you'll manually add to later lives here.
+# Add/remove/comment-out lines below; nothing further down needs to change.
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# File Templates to copy: SourceFile / DestPath / Prefix
+# ----------------------------------------------------------------------------
+$FileTemplates = @(
+    @{ SourceFile = "doommake-tweak-FILE_credits.txt";        DestPath = ".\src";                Prefix = "FILE_" }
+    @{ SourceFile = "doommake-tweak-FILE_COMPLVL.txt";        DestPath = ".\src\assets\_global";  Prefix = "FILE_" }
+    @{ SourceFile = "doommake-tweak-FILE_UMAPINFO.txt";       DestPath = ".\src\assets\_global";  Prefix = "FILE_" }
+    @{ SourceFile = "doommake-tweak-FILE_doom1-playpal.cube"; DestPath = ".\";                    Prefix = "FILE_" }
+    @{ SourceFile = "doommake-tweak-DECO_main.dh";            DestPath = ".\src\decohack";        Prefix = "DECO_" }
+    @{ SourceFile = "doommake-tweak-DECO_strings.dh";         DestPath = ".\src\decohack";        Prefix = "DECO_" }
+
+    @{ SourceFile = "doommake-tweak-WADMERGE_merge-doDehWad.txt"; DestPath = ".\scripts"; Prefix = "WADMERGE_" }
+    @{ SourceFile = "doommake-tweak-WADMERGE_merge-editorrelease.txt"; DestPath = ".\scripts"; Prefix = "WADMERGE_" }
+    @{ SourceFile = "doommake-tweak-WADMERGE_merge-editorrelease-map99.txt"; DestPath = ".\scripts"; Prefix = "WADMERGE_" }
+    @{ SourceFile = "doommake-tweak-WADMERGE_merge-texturesrelease.txt"; DestPath = ".\scripts"; Prefix = "WADMERGE_" }
+    @{ SourceFile = "doommake-tweak-WADMERGE_merge-palette.txt"; DestPath = ".\scripts"; Prefix = "WADMERGE_" }
+)
+
+# ----------------------------------------------------------------------------
+# Entry Targets to fully replace: ConfFile / EntryName
+# ----------------------------------------------------------------------------
+$EntryReplacements = @(
+    @{ ConfFile = "doommake-tweak_FUNC-REPLACE_make.conf";    EntryName = "make" }
+    @{ ConfFile = "doommake-tweak_FUNC-REPLACE_release.conf"; EntryName = "release" }
+)
+
+# ----------------------------------------------------------------------------
+# Blocks to Insert into doommake.script (functions + entry targets),
+# placed just before the first stock "check entry", in listed order
+# ----------------------------------------------------------------------------
+$AppendBlocks = @(
+    "doommake-tweak_FUNC-MAKE-TARGETS_all.conf"
+    "doommake-tweak_FUNC-MAKE-TARGETS_final.conf"
+)
+
+# ============================================================================
+# END EDITABLE SECTION
+# ============================================================================
 
 Write-Host ""
 Write-Host "==============================================="
@@ -62,21 +107,6 @@ if (Test-Path $propsPath) {
 }
 
 # ============================================================================
-# STEP 1: Create Directories
-# ============================================================================
-
-Write-Host "STEP 1: Creating directories..." -ForegroundColor Cyan
-
-# Create textureX directory
-$textureXDir = ".\scripts\textureX"
-if (!(Test-Path $textureXDir)) {
-    New-Item -ItemType Directory -Path $textureXDir -Force | Out-Null
-    Write-Host "  [Created Dir] $textureXDir" -ForegroundColor Green
-} else {
-    Write-Host "  [Dir Exists]  $textureXDir" -ForegroundColor Yellow
-}
-
-# ============================================================================
 # STEP 2: Copy File Templates
 # ============================================================================
 
@@ -90,11 +120,11 @@ function Copy-FileTemplate {
         [string]$DestPath,
         [string]$Prefix
     )
-    
+
     $DestFilename = $SourceFile -replace "doommake-tweak-$Prefix", ""
     $SourcePath = Join-Path $PSScriptRoot $SourceFile
     $DestFullPath = Join-Path $DestPath $DestFilename
-    
+
     if (Test-Path $SourcePath) {
         Copy-Item $SourcePath $DestFullPath -Force
         if (Test-Path $DestFullPath) {
@@ -105,329 +135,149 @@ function Copy-FileTemplate {
     }
 }
 
-# ----------------------------------------------------------------------------
-# WADMERGE Scripts - Copy to .\scripts\
-# ----------------------------------------------------------------------------
-Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-dehonly.txt" -DestPath ".\scripts" -Prefix "WADMERGE_"
-Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-release-nopatch.txt" -DestPath ".\scripts" -Prefix "WADMERGE_"
-Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-textures-All.txt" -DestPath ".\scripts" -Prefix "WADMERGE_"
-Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-textures-Restricted.txt" -DestPath ".\scripts" -Prefix "WADMERGE_"
-Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-palette.txt" -DestPath ".\scripts" -Prefix "WADMERGE_"
-Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-playpal-all.txt" -DestPath ".\scripts" -Prefix "WADMERGE_"
-Copy-FileTemplate -SourceFile "doommake-tweak-WADMERGE_merge-editor-all.txt" -DestPath ".\scripts" -Prefix "WADMERGE_"
-
-
-# ----------------------------------------------------------------------------
-# FILE Templates - Copy to various locations
-# ----------------------------------------------------------------------------
-Copy-FileTemplate -SourceFile "doommake-tweak-FILE_COMPLVL.txt" -DestPath ".\src\assets\_global" -Prefix "FILE_"
-Copy-FileTemplate -SourceFile "doommake-tweak-FILE_UMAPINFO.txt" -DestPath ".\src\assets\_global" -Prefix "FILE_"
-Copy-FileTemplate -SourceFile "doommake-tweak-FILE_doom1-playpal.cube" -DestPath ".\" -Prefix "FILE_"
-
-# ----------------------------------------------------------------------------
-# DECO Templates - Copy to .\src\decohack\
-# ----------------------------------------------------------------------------
-Copy-FileTemplate -SourceFile "doommake-tweak-DECO_main.dh" -DestPath ".\src\decohack" -Prefix "DECO_"
-Copy-FileTemplate -SourceFile "doommake-tweak-DECO_strings.dh" -DestPath ".\src\decohack" -Prefix "DECO_"
-
-# ============================================================================
-# STEP 3: Create Texture Variants
-# ============================================================================
-
-Write-Host ""
-Write-Host "STEP 3: Creating All / Restricted UDB Texture WADs..." -ForegroundColor Cyan
-
-$sourceTexture1 = ".\src\textures\texture1.txt"
-$restrictedBackup = ".\scripts\textureX\texture1-Restricted.txt"
-$allBackup = ".\scripts\textureX\texture1-All.txt"
-$doom2DefaultBackup = ".\scripts\textureX\texture1-doom2Default.txt"
-
-if (Test-Path $sourceTexture1) {
-    # Backup original as Restricted
-    if (!(Test-Path $restrictedBackup)) {
-        Copy-Item $sourceTexture1 $restrictedBackup -Force
-        Write-Host "  [File Created] texture1-Restricted.txt" -ForegroundColor Green
-    } else {
-        Write-Host "  [File Exists]  texture1-Restricted.txt" -ForegroundColor Yellow
-    }
-    
-    # Delete original
-    Remove-Item $sourceTexture1
-    
-    # Run rebuildtextures if All doesn't exist
-    if (!(Test-Path $allBackup)) {
-        Write-Host "  [Running] doommake rebuildtextures..." -ForegroundColor Cyan
-        & doommake rebuildtextures | Out-Null
-        
-        if (Test-Path $sourceTexture1) {
-            # Copy rebuilt to All
-            Copy-Item $sourceTexture1 $allBackup -Force
-            Write-Host "  [File Created] texture1-All.txt" -ForegroundColor Green
-            
-            # Copy to doom2Default
-            Copy-Item $sourceTexture1 $doom2DefaultBackup -Force
-            Write-Host "  [File Created] texture1-doom2Default.txt" -ForegroundColor Green
-            
-            # Restore Restricted
-            Copy-Item $restrictedBackup $sourceTexture1 -Force
-            Write-Host "  [Restored] texture1-Restricted.txt -> texture1.txt" -ForegroundColor Green
-        }
-    } else {
-        Write-Host "  [File Exists]  texture1-All.txt (skipping rebuild)" -ForegroundColor Yellow
-        # Still restore Restricted
-        Copy-Item $restrictedBackup $sourceTexture1 -Force
-        Write-Host "  [Restored] texture1-Restricted.txt -> texture1.txt" -ForegroundColor Green
-    }
+$copiedCount = 0
+foreach ($template in $FileTemplates) {
+    Copy-FileTemplate -SourceFile $template.SourceFile -DestPath $template.DestPath -Prefix $template.Prefix
+    $copiedCount++
+}
+if ($copiedCount -eq 0) {
+    Write-Host "  [None] No file templates listed - nothing to copy." -ForegroundColor Yellow
 }
 
 # ============================================================================
-# STEP 4: Append Build Targets to doommake.script
+# STEP 3: Replace Entry Targets (full-function replace)
 # ============================================================================
 
 Write-Host ""
-Write-Host "STEP 4: Adding build targets..." -ForegroundColor Cyan
+Write-Host "STEP 3: Replacing entry targets..." -ForegroundColor Cyan
 
 $scriptPath = ".\doommake.script"
-$scriptContent = Get-Content $scriptPath -Raw
 
-# ----------------------------------------------------------------------------
-# FUNC: Build Targets
-# ----------------------------------------------------------------------------
-$buildTargetsFile = Join-Path $PSScriptRoot "doommake-tweak_FUNC_BuildTargets.conf"
-if (Test-Path $buildTargetsFile) {
-    $newTargets = Get-Content $buildTargetsFile -Raw
-    
-    # Check if already added
-    if ($scriptContent -notmatch 'TARGET: nopatch') {
-        $scriptContent += $newTargets
-        [System.IO.File]::WriteAllText($scriptPath, $scriptContent, $utf8NoBom)
-        Write-Host "  [Added] New build targets" -ForegroundColor Green
-    } else {
-        Write-Host "  [Exists] Build targets already present" -ForegroundColor Yellow
+# Function to fully replace a "check entry <name>(args) { ... }" block,
+# no matter how many nested braces/functions are inside it.
+function Replace-CheckEntry {
+    param(
+        [string]$ConfFile,
+        [string]$EntryName
+    )
+
+    $confPath = Join-Path $PSScriptRoot $ConfFile
+
+    if (!(Test-Path $confPath)) {
+        Write-Host "  [WARNING] Config file not found: $ConfFile" -ForegroundColor Red
+        return
     }
-} else {
-    Write-Host "  [ERROR] Config file not found: doommake-tweak_FUNC_BuildTargets.conf" -ForegroundColor Red
-}
 
-# ============================================================================
-# STEP 5: Insert New Functions
-# ============================================================================
+    $newBlock = (Get-Content $confPath -Raw).TrimEnd()
+    $markerLine = ($newBlock -split "`r?`n")[0].Trim()
 
-Write-Host ""
-Write-Host "STEP 5: Adding new check functions..." -ForegroundColor Cyan
+    $scriptContent = Get-Content $scriptPath -Raw
 
-$scriptContent = Get-Content $scriptPath -Raw
+    if ($scriptContent.Contains($markerLine)) {
+        Write-Host "  [Skipped] '$EntryName' already replaced (marker found)" -ForegroundColor Yellow
+        return
+    }
 
-# ----------------------------------------------------------------------------
-# FUNC: Check Functions
-# ----------------------------------------------------------------------------
-$functionsFile = Join-Path $PSScriptRoot "doommake-tweak_FUNC_checkFunctions.conf"
-if (Test-Path $functionsFile) {
-    $newFunctions = Get-Content $functionsFile -Raw
-    
-    # Check if already added
-    if ($scriptContent -notmatch 'function doDehWad') {
-        # Find the marker comment and doAll() function
-        $marker = '/\*\*\s+\*\s+Builds every component for the project release\.\s+\*/\s+check function doAll\(\) \{'
-        
-        if ($scriptContent -match $marker) {
-            # Insert the entire functions file ABOVE this marker
-            $scriptContent = $scriptContent -replace "($marker)", "$newFunctions`r`n`$1"
-            [System.IO.File]::WriteAllText($scriptPath, $scriptContent, $utf8NoBom)
-            Write-Host "  [Added] New check functions" -ForegroundColor Green
-        } else {
-            Write-Host "  [ERROR] Could not find insertion point" -ForegroundColor Red
+    $startPattern = "check entry $EntryName\(args\)\s*\{"
+    $m = [regex]::Match($scriptContent, $startPattern)
+
+    if (-not $m.Success) {
+        Write-Host "  [WARNING] Could not find 'check entry $EntryName(args)' in doommake.script" -ForegroundColor Red
+        return
+    }
+
+    # Walk forward from the opening brace, tracking depth, to find the
+    # matching closing brace - handles any nesting inside the entry.
+    $openBraceIndex = $scriptContent.IndexOf('{', $m.Index)
+    $depth = 0
+    $i = $openBraceIndex
+    $endIndex = -1
+
+    while ($i -lt $scriptContent.Length) {
+        if ($scriptContent[$i] -eq '{') { $depth++ }
+        elseif ($scriptContent[$i] -eq '}') {
+            $depth--
+            if ($depth -eq 0) {
+                $endIndex = $i
+                break
+            }
         }
-    } else {
-        Write-Host "  [Exists] Functions already present" -ForegroundColor Yellow
+        $i++
     }
-} else {
-    Write-Host "  [ERROR] Config file not found: doommake-tweak_FUNC_checkFunctions.conf" -ForegroundColor Red
+
+    if ($endIndex -eq -1) {
+        Write-Host "  [WARNING] Could not find matching closing brace for '$EntryName'" -ForegroundColor Red
+        return
+    }
+
+    $scriptContent = $scriptContent.Substring(0, $m.Index) + $newBlock + $scriptContent.Substring($endIndex + 1)
+    [System.IO.File]::WriteAllText($scriptPath, $scriptContent, $utf8NoBom)
+    Write-Host "  [Replaced] entry '$EntryName'" -ForegroundColor Green
+}
+
+$replacedCount = 0
+foreach ($replacement in $EntryReplacements) {
+    Replace-CheckEntry -ConfFile $replacement.ConfFile -EntryName $replacement.EntryName
+    $replacedCount++
+}
+if ($replacedCount -eq 0) {
+    Write-Host "  [None] No entry targets listed - nothing to replace." -ForegroundColor Yellow
 }
 
 # ============================================================================
-# STEP 6: Modify doAll() Function
+# STEP 4: Insert Functions & Entry Targets into doommake.script
 # ============================================================================
+# Custom blocks are inserted immediately before the FIRST "check entry" found
+# in the file, rather than appended to the very end. This keeps them below
+# every stock function (so our code can call stock functions) and above
+# every stock entry (so stock entries like "release" can call our custom
+# functions too). Multiple blocks are inserted in order at the same growing
+# point, so later files (e.g. _final.conf) still land after earlier ones
+# (e.g. _all.conf).
 
 Write-Host ""
-Write-Host "STEP 6: Modifying doAll() function..." -ForegroundColor Cyan
+Write-Host "STEP 4: Inserting new functions and entry targets..." -ForegroundColor Cyan
 
 $scriptContent = Get-Content $scriptPath -Raw
 
-# ----------------------------------------------------------------------------
-# FUNC: doAll() Additions
-# ----------------------------------------------------------------------------
-$doAllAdditionsFile = Join-Path $PSScriptRoot "doommake-tweak_FUNC_doAll-edits.conf"
-if (Test-Path $doAllAdditionsFile) {
-    $doAllAdditions = Get-Content $doAllAdditionsFile -Raw
-    
-    # Extract just the doAll() function to check if already modified
-    if ($scriptContent -match '(?s)(check function doAll\(\) \{.*?\n\})') {
-        $doAllFunction = $matches[1]
-        
-        # Check if doAll() already contains the additions (check within the function itself)
-        if ($doAllFunction -notmatch '// -- doommake-TWEAK-additions') {
-            # Find doAll() function and insert additions before closing brace
-            $doAllBody = $doAllFunction.Substring(0, $doAllFunction.LastIndexOf('}'))
-            $newDoAll = $doAllBody + "`r`n" + $doAllAdditions + "`r`n}"
-            
-            # Replace in script
-            $scriptContent = $scriptContent -replace [regex]::Escape($doAllFunction), $newDoAll
-            [System.IO.File]::WriteAllText($scriptPath, $scriptContent, $utf8NoBom)
-            Write-Host "  [Modified] doAll() function" -ForegroundColor Green
-        } else {
-            Write-Host "  [Exists] doAll() already modified" -ForegroundColor Yellow
+$firstEntryMatch = [regex]::Match($scriptContent, 'check\s+entry\s+\w+\(args\)\s*\{')
+
+if (-not $firstEntryMatch.Success) {
+    Write-Host "  [ERROR] Could not find any 'check entry' in doommake.script - cannot determine insertion point." -ForegroundColor Red
+} else {
+    $insertIndex = $firstEntryMatch.Index
+    $insertedCount = 0
+
+    foreach ($block in $AppendBlocks) {
+
+        $confPath = Join-Path $PSScriptRoot $block
+
+        if (!(Test-Path $confPath)) {
+            Write-Host "  [WARNING] Config file not found: $block" -ForegroundColor Red
+            continue
         }
-    } else {
-        Write-Host "  [ERROR] Could not find doAll() function" -ForegroundColor Red
+
+        $newBlock = (Get-Content $confPath -Raw).TrimEnd()
+        $markerLine = ($newBlock -split "`r?`n")[0].Trim()
+
+        if ($scriptContent.Contains($markerLine)) {
+            Write-Host "  [Skipped] '$block' already inserted (marker found)" -ForegroundColor Yellow
+            continue
+        }
+
+        $insertText = $newBlock + "`r`n`r`n"
+        $scriptContent = $scriptContent.Substring(0, $insertIndex) + $insertText + $scriptContent.Substring($insertIndex)
+        $insertIndex += $insertText.Length
+
+        Write-Host "  [Inserted] $block" -ForegroundColor Green
+        $insertedCount++
     }
-} else {
-    Write-Host "  [ERROR] Config file not found: doommake-tweak_FUNC_doAll-edits.conf" -ForegroundColor Red
-}
 
-# ============================================================================
-# STEP 7: Create doAllNoPatch() Function
-# ============================================================================
-
-Write-Host ""
-Write-Host "STEP 7: Creating doAllNoPatch() function..." -ForegroundColor Cyan
-
-$scriptContent = Get-Content $scriptPath -Raw
-
-# Check if already exists
-if ($scriptContent -notmatch 'function doAllNoPatch') {
-    # Find the modified doAll() function
-    if ($scriptContent -match '(?s)(check function doAll\(\) \{[^\}]*\})') {
-        $doAllFunction = $matches[1]
-        
-        # Create doAllNoPatch version
-        $doAllNoPatchFunction = $doAllFunction -replace 'check function doAll\(\)', 'check function doAllNoPatch()'
-        $doAllNoPatchFunction = $doAllNoPatchFunction -replace '(\s+)doPatch\(false\);', '$1// doPatch(false); // - removed by Tweak'
-        
-        # Find where doAll() ends and insert doAllNoPatch after it
-        $insertAfter = [regex]::Escape($doAllFunction)
-        $scriptContent = $scriptContent -replace "($insertAfter)", "`$1`r`n`r`n$doAllNoPatchFunction"
-        
-        [System.IO.File]::WriteAllText($scriptPath, $scriptContent, $utf8NoBom)
-        Write-Host "  [Created] doAllNoPatch() function" -ForegroundColor Green
-    } else {
-        Write-Host "  [ERROR] Could not find doAll() function to copy" -ForegroundColor Red
-    }
-} else {
-    Write-Host "  [Exists] doAllNoPatch() already present" -ForegroundColor Yellow
-}
-
-# ============================================================================
-# STEP 7b: Remove doDist() from make entry target
-# ============================================================================
-
-Write-Host ""
-Write-Host "STEP 7b: Removing doDist() from make entry target..." -ForegroundColor Cyan
-
-$scriptContent = Get-Content $scriptPath -Raw
-
-$oldMake = "check entry make(args) {`r`n`tdoInit();`r`n`tdoAll();`r`n`tdoRelease();`r`n`tdoDist();`r`n}"
-$newMake = "check entry make(args) {`r`n`tdoInit();`r`n`tdoAll();`r`n`tdoRelease();`r`n`tdoDist();`r`n}"   # leave make unchanged: doDist() kept
-
-if ($scriptContent -match [regex]::Escape($oldMake)) {
-    $scriptContent = $scriptContent -replace [regex]::Escape($oldMake), $newMake
     [System.IO.File]::WriteAllText($scriptPath, $scriptContent, $utf8NoBom)
-    Write-Host "  [Modified] Removed doDist() from make entry target" -ForegroundColor Green
-} else {
-    Write-Host "  [Skipped] doDist() not found in make entry target (already removed?)" -ForegroundColor Yellow
-}
 
-# ============================================================================
-# STEP 7c: Add doDist() to release entry target
-# ============================================================================
-
-Write-Host ""
-Write-Host "STEP 7c: Adding doDist() to release entry target..." -ForegroundColor Cyan
-
-$scriptContent = Get-Content $scriptPath -Raw
-
-$oldRelease = "check entry release(args) {`r`n`tdoInit();`r`n`tdoAll();`r`n`tdoRelease();`r`n}"
-$newRelease = "check entry release(args) {`r`n`tdoInit();`r`n`tdoAll();`r`n`tdoRelease();`r`n}"   # leave release unchanged: doDist() NOT added
-
-if ($scriptContent -match [regex]::Escape($oldRelease)) {
-    $scriptContent = $scriptContent -replace [regex]::Escape($oldRelease), $newRelease
-    [System.IO.File]::WriteAllText($scriptPath, $scriptContent, $utf8NoBom)
-    Write-Host "  [Modified] Added doDist() to release entry target" -ForegroundColor Green
-} else {
-    Write-Host "  [Skipped] release entry target not found in expected form (already modified?)" -ForegroundColor Yellow
-}
-
-# ============================================================================
-# STEP 7d: Add texture + editor builds to release entry target
-# ============================================================================
-# NOTE: Must run AFTER Step 7c (the match string below includes the doDist()
-# that 7c appends). Inserts the contents of the releaseTarget-edits config
-# immediately BEFORE doRelease(); in the release entry target.
-
-Write-Host ""
-Write-Host "STEP 7d: Adding texture/editor builds to release entry target..." -ForegroundColor Cyan
-
-$scriptContent = Get-Content $scriptPath -Raw
-
-$releaseEditsFile = Join-Path $PSScriptRoot "doommake-tweak_FUNC_releaseTarget-edits.conf"
-if (Test-Path $releaseEditsFile) {
-    $releaseAdditions = (Get-Content $releaseEditsFile -Raw).TrimEnd()
-
-    $oldRelease = "check entry release(args) {`r`n`tdoInit();`r`n`tdoAll();`r`n`tdoRelease();`r`n}"
-    $newRelease = "check entry release(args) {`r`n`tdoInit();`r`n`tdoAll();`r`n" + $releaseAdditions + "`r`n`tdoRelease();`r`n}"
-
-    if ($scriptContent -match [regex]::Escape($oldRelease)) {
-        $scriptContent = $scriptContent -replace [regex]::Escape($oldRelease), $newRelease
-        [System.IO.File]::WriteAllText($scriptPath, $scriptContent, $utf8NoBom)
-        Write-Host "  [Modified] Added texture/editor builds to release entry target" -ForegroundColor Green
-    } else {
-        Write-Host "  [Skipped] release entry target not in expected form (already modified?)" -ForegroundColor Yellow
+    if ($insertedCount -eq 0) {
+        Write-Host "  [None] No blocks listed - nothing to insert." -ForegroundColor Yellow
     }
-} else {
-    Write-Host "  [ERROR] Config file not found: doommake-tweak_FUNC_releaseTarget-edits.conf" -ForegroundColor Red
-}
-
-# ============================================================================
-# STEP 7e: Add texture/editor builds to the all entry target
-# ============================================================================
-# Inserts the contents of the allTarget-edits config immediately AFTER
-# doAll(); in the stock 'all' entry target.
-
-Write-Host ""
-Write-Host "STEP 7e: Adding texture/editor builds to all entry target..." -ForegroundColor Cyan
-
-$scriptContent = Get-Content $scriptPath -Raw
-
-$allEditsFile = Join-Path $PSScriptRoot "doommake-tweak_FUNC_allTarget-edits.conf"
-if (Test-Path $allEditsFile) {
-    $allAdditions = (Get-Content $allEditsFile -Raw).TrimEnd()
-
-    $oldAll = "check entry all(args) {`r`n`tdoInit();`r`n`tdoAll();`r`n}"
-    $newAll = "check entry all(args) {`r`n`tdoInit();`r`n`tdoAll();`r`n" + $allAdditions + "`r`n}"
-
-    if ($scriptContent -match [regex]::Escape($oldAll)) {
-        $scriptContent = $scriptContent -replace [regex]::Escape($oldAll), $newAll
-        [System.IO.File]::WriteAllText($scriptPath, $scriptContent, $utf8NoBom)
-        Write-Host "  [Modified] Added texture/editor builds to all entry target" -ForegroundColor Green
-    } else {
-        Write-Host "  [Skipped] all entry target not in expected form (already modified?)" -ForegroundColor Yellow
-    }
-} else {
-    Write-Host "  [ERROR] Config file not found: doommake-tweak_FUNC_allTarget-edits.conf" -ForegroundColor Red
-}
-
-# ============================================================================
-# STEP 8: Initialize Project
-# ============================================================================
-
-Write-Host ""
-Write-Host "STEP 8: Initializing blank project..." -ForegroundColor Cyan
-Write-Host "  [Running] doommake make" -ForegroundColor Green
-Write-Host ""
-
-& doommake make
-if ($LASTEXITCODE -ne 0) {
-    throw "doommake make failed with exit code $LASTEXITCODE"
 }
 
 # ============================================================================
@@ -436,35 +286,6 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor DarkCyan
-Write-Host "== Tweak Complete! =======================" -ForegroundColor Green
+Write-Host "== Template copy complete. ===============" -ForegroundColor Green
 Write-Host "==========================================" -ForegroundColor DarkCyan
-Write-Host ""
-Write-Host "DEFAULT targets:" -ForegroundColor White
-Write-Host "  doommake all               - Full build + editor/texture WADs + release WAD (no zip)" -ForegroundColor Gray
-Write-Host "  doommake assets            - Convert and merge assets WAD" -ForegroundColor Gray
-Write-Host "  doommake clean             - Delete the build directory" -ForegroundColor Gray
-Write-Host "  doommake convert           - Convert graphics, sprites, sounds and palettes" -ForegroundColor Gray
-Write-Host "  doommake converttextures   - Convert texture flats and patches to Doom format" -ForegroundColor Gray
-Write-Host "  doommake editor            - Rebuild the editor WAD" -ForegroundColor Gray
-Write-Host "  doommake init              - Initialise the build directory" -ForegroundColor Gray
-Write-Host "  doommake make              - Full build, create release WAD and zip for distribution" -ForegroundColor Gray
-Write-Host "  doommake maps              - Merge the maps WAD" -ForegroundColor Gray
-Write-Host "  doommake maptextures       - Export a WAD of only textures used in maps" -ForegroundColor Gray
-Write-Host "  doommake patch             - Compile the DeHackEd patch and show budget" -ForegroundColor Gray
-Write-Host "  doommake rebuildpalettes   - Rebuild primary palettes and colormaps" -ForegroundColor Gray
-Write-Host "  doommake rebuildtextures   - Rebuild texture listings in src/textures" -ForegroundColor Gray
-Write-Host "  doommake textures          - Convert and merge textures WAD" -ForegroundColor Gray
-Write-Host ""
-Write-Host "TWEAK targets:" -ForegroundColor White
-Write-Host "  doommake deco              - Compile DECOHack and build a DEHACKED-only WAD" -ForegroundColor Yellow
-Write-Host "  doommake editorall         - Editor-asset WAD with ALL textures" -ForegroundColor Yellow
-Write-Host "  doommake editorrestricted  - Editor-asset WAD with RESTRICTED textures" -ForegroundColor Yellow
-Write-Host "  doommake fresh             - Clean build dir, then full build and create release WAD" -ForegroundColor Yellow
-Write-Host "  doommake nopatch           - Full build without DECOHack/DeHackEd" -ForegroundColor Yellow
-Write-Host "  doommake playpal           - Convert palettes and colormaps into a palette-only WAD" -ForegroundColor Yellow
-Write-Host "  doommake release           - Full build, create release WAD (no zip)" -ForegroundColor Yellow
-Write-Host "  doommake releasenopatch    - Full build without DECOHack/DeHackEd , create release WAD and zip for distribution" -ForegroundColor Yellow
-Write-Host "  doommake texall            - Build texture WAD with ALL textures (for UDB)" -ForegroundColor Yellow
-Write-Host "  doommake texrestricted     - Build texture WAD with RESTRICTED textures" -ForegroundColor Yellow
-Write-Host "  doommake udb               - Builds UDB editor resources" -ForegroundColor Yellow
 Write-Host ""
