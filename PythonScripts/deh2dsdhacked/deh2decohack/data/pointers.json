@@ -1,0 +1,697 @@
+{
+ "A_Light0": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_WeaponReady": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_Lower": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_Raise": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_Punch": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_ReFire": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_FirePistol": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_Light1": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_FireShotgun": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_Light2": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_FireShotgun2": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_CheckReload": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_OpenShotgun2": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_LoadShotgun2": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_CloseShotgun2": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_FireCGun": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_GunFlash": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_FireMissile": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_Saw": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_FirePlasma": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_BFGsound": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_FireBFG": {
+  "params": [],
+  "weapon": true,
+  "source": "doom19"
+ },
+ "A_BFGSpray": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_Explode": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_Pain": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_PlayerScream": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_Fall": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_XScream": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_Look": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_Chase": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_FaceTarget": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_PosAttack": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_Scream": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_VileChase": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_VileStart": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_VileTarget": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_VileAttack": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_StartFire": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_Fire": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_FireCrackle": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_Tracer": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_SkelWhoosh": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_SkelFist": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_SkelMissile": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_FatRaise": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_FatAttack1": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_FatAttack2": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_FatAttack3": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_BossDeath": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_CPosAttack": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_CPosRefire": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_TroopAttack": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_SargAttack": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_HeadAttack": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_BruisAttack": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_SkullAttack": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_Metal": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_SPosAttack": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_SpidRefire": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_BabyMetal": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_BspiAttack": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_Hoof": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_CyberAttack": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_PainAttack": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_PainDie": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_KeenDie": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_BrainPain": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_BrainScream": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_BrainDie": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_BrainAwake": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_BrainSpit": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_SpawnSound": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_SpawnFly": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_BrainExplode": {
+  "params": [],
+  "weapon": false,
+  "source": "doom19"
+ },
+ "A_Detonate": {
+  "params": [],
+  "weapon": false,
+  "source": "mbf"
+ },
+ "A_Mushroom": {
+  "params": [
+   "ANGLEFIXED",
+   "FIXED"
+  ],
+  "weapon": false,
+  "source": "mbf"
+ },
+ "A_Spawn": {
+  "params": [
+   "THING",
+   "SHORT"
+  ],
+  "weapon": false,
+  "source": "mbf"
+ },
+ "A_Turn": {
+  "params": [
+   "ANGLEINT"
+  ],
+  "weapon": false,
+  "source": "mbf"
+ },
+ "A_Face": {
+  "params": [
+   "ANGLEUINT"
+  ],
+  "weapon": false,
+  "source": "mbf"
+ },
+ "A_Scratch": {
+  "params": [
+   "SHORT",
+   "SOUND"
+  ],
+  "weapon": false,
+  "source": "mbf"
+ },
+ "A_PlaySound": {
+  "params": [
+   "SOUND",
+   "BOOL"
+  ],
+  "weapon": false,
+  "source": "mbf"
+ },
+ "A_RandomJump": {
+  "params": [
+   "STATE",
+   "UINT"
+  ],
+  "weapon": false,
+  "source": "mbf"
+ },
+ "A_LineEffect": {
+  "params": [
+   "SHORT",
+   "SHORT"
+  ],
+  "weapon": false,
+  "source": "mbf"
+ },
+ "A_Die": {
+  "params": [],
+  "weapon": false,
+  "source": "mbf"
+ },
+ "A_BetaSkullAttack": {
+  "params": [],
+  "weapon": false,
+  "source": "mbf"
+ },
+ "A_Stop": {
+  "params": [],
+  "weapon": false,
+  "source": "mbf"
+ },
+ "A_FireOldBFG": {
+  "params": [],
+  "weapon": true,
+  "source": "mbf"
+ },
+ "A_SpawnObject": {
+  "params": [
+   "THING",
+   "ANGLEFIXED",
+   "FIXED",
+   "FIXED",
+   "FIXED",
+   "FIXED",
+   "FIXED",
+   "FIXED"
+  ],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_MonsterProjectile": {
+  "params": [
+   "THINGMISSILE",
+   "ANGLEFIXED",
+   "ANGLEFIXED",
+   "FIXED",
+   "FIXED"
+  ],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_MonsterBulletAttack": {
+  "params": [
+   "ANGLEFIXED",
+   "ANGLEFIXED",
+   "UINT",
+   "USHORT",
+   "UINT"
+  ],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_MonsterMeleeAttack": {
+  "params": [
+   "USHORT",
+   "UINT",
+   "SOUND",
+   "FIXED"
+  ],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_RadiusDamage": {
+  "params": [
+   "UINT",
+   "UINT"
+  ],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_NoiseAlert": {
+  "params": [],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_HealChase": {
+  "params": [
+   "STATE",
+   "SOUND"
+  ],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_SeekTracer": {
+  "params": [
+   "ANGLEFIXED",
+   "ANGLEFIXED"
+  ],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_FindTracer": {
+  "params": [
+   "ANGLEFIXED",
+   "UINT"
+  ],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_ClearTracer": {
+  "params": [],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_JumpIfHealthBelow": {
+  "params": [
+   "STATE",
+   "INT"
+  ],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_JumpIfTargetInSight": {
+  "params": [
+   "STATE",
+   "ANGLEFIXED"
+  ],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_JumpIfTargetCloser": {
+  "params": [
+   "STATE",
+   "FIXED"
+  ],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_JumpIfTracerInSight": {
+  "params": [
+   "STATE",
+   "ANGLEFIXED"
+  ],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_JumpIfTracerCloser": {
+  "params": [
+   "STATE",
+   "FIXED"
+  ],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_JumpIfFlagsSet": {
+  "params": [
+   "STATE",
+   "FLAGS",
+   "FLAGS"
+  ],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_AddFlags": {
+  "params": [
+   "FLAGS",
+   "FLAGS"
+  ],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_RemoveFlags": {
+  "params": [
+   "FLAGS",
+   "FLAGS"
+  ],
+  "weapon": false,
+  "source": "mbf21"
+ },
+ "A_WeaponProjectile": {
+  "params": [
+   "THINGMISSILE",
+   "ANGLEFIXED",
+   "ANGLEFIXED",
+   "FIXED",
+   "FIXED"
+  ],
+  "weapon": true,
+  "source": "mbf21"
+ },
+ "A_WeaponBulletAttack": {
+  "params": [
+   "ANGLEFIXED",
+   "ANGLEFIXED",
+   "UINT",
+   "USHORT",
+   "UINT"
+  ],
+  "weapon": true,
+  "source": "mbf21"
+ },
+ "A_WeaponMeleeAttack": {
+  "params": [
+   "USHORT",
+   "UINT",
+   "FIXED",
+   "SOUND",
+   "FIXED"
+  ],
+  "weapon": true,
+  "source": "mbf21"
+ },
+ "A_WeaponSound": {
+  "params": [
+   "SOUND",
+   "BOOL"
+  ],
+  "weapon": true,
+  "source": "mbf21"
+ },
+ "A_WeaponAlert": {
+  "params": [],
+  "weapon": true,
+  "source": "mbf21"
+ },
+ "A_WeaponJump": {
+  "params": [
+   "STATE",
+   "UINT"
+  ],
+  "weapon": true,
+  "source": "mbf21"
+ },
+ "A_ConsumeAmmo": {
+  "params": [
+   "INT"
+  ],
+  "weapon": true,
+  "source": "mbf21"
+ },
+ "A_CheckAmmo": {
+  "params": [
+   "STATE",
+   "USHORT"
+  ],
+  "weapon": true,
+  "source": "mbf21"
+ },
+ "A_RefireTo": {
+  "params": [
+   "STATE",
+   "BOOL"
+  ],
+  "weapon": true,
+  "source": "mbf21"
+ },
+ "A_GunFlashTo": {
+  "params": [
+   "STATE",
+   "BOOL"
+  ],
+  "weapon": true,
+  "source": "mbf21"
+ }
+}
