@@ -32,6 +32,7 @@ $FileTemplates = @(
     @{ SourceFile = "doommake-tweak-WADMERGE_merge-editorrelease.txt"; DestPath = ".\scripts"; Prefix = "WADMERGE_" }
     @{ SourceFile = "doommake-tweak-WADMERGE_merge-editorrelease-map99.txt"; DestPath = ".\scripts"; Prefix = "WADMERGE_" }
     @{ SourceFile = "doommake-tweak-WADMERGE_merge-texturesrelease.txt"; DestPath = ".\scripts"; Prefix = "WADMERGE_" }
+    @{ SourceFile = "doommake-tweak-WADMERGE_merge-texturesrelease-map99.txt"; DestPath = ".\scripts"; Prefix = "WADMERGE_" }
     @{ SourceFile = "doommake-tweak-WADMERGE_merge-palette.txt"; DestPath = ".\scripts"; Prefix = "WADMERGE_" }
 )
 
