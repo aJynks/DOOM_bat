@@ -3,7 +3,7 @@ deco_emitter.py
 ---------------
 Stage 3 of the DEH -> DECOHack converter.
 
-Takes the DehIR from deh_parser plus the base tables from ./data/ and emits
+Takes the DehIR from deh_ir plus the base tables from ./data/ and emits
 structured, human-readable DECOHack source targeting the `dsdhacked` patch
 format (MBF21 feature set, dsda-doom).
 
@@ -37,7 +37,7 @@ import os
 import re
 from collections import defaultdict
 
-from deh_parser import DehIR
+from deh_ir import DehIR
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
@@ -1015,7 +1015,7 @@ class Emitter:
 
 
 def convert(deh_path, tables=None):
-    from deh_parser import parse_deh
+    from deh_ir import parse_deh
     ir = parse_deh(deh_path)
     t = tables or Tables()
     return Emitter(ir, t).emit()
