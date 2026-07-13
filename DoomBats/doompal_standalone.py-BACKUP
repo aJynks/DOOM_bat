@@ -7,7 +7,7 @@ from pathlib import Path
 from PIL import Image
 import numpy as np
 
-__version__ = "1.1.0"
+__version__ = "1.0.0"
 
 
 # ============================================================================
@@ -874,127 +874,73 @@ def find_boom_colormaps(wad_path):
 # HELP FUNCTION
 # ============================================================================
 
-def _ansi_colors():
-    """
-    Return ANSI colour codes for help output, or empty strings when the
-    output is piped/redirected or the console can't handle them.
-    On Windows 10+ the empty os.system('') call switches the console
-    into VT processing mode so ANSI codes work.
-    """
-    if not sys.stdout.isatty():
-        return {k: "" for k in ("TI", "HD", "CM", "FL", "DM", "R")}
-    if os.name == "nt":
-        os.system("")  # enable ANSI/VT processing on Windows 10+ consoles
-    return {
-        "TI": "\033[1;96m",  # title      - bold bright cyan
-        "HD": "\033[1;93m",  # headers    - bold bright yellow
-        "CM": "\033[92m",    # commands   - bright green
-        "FL": "\033[96m",    # flags/args - bright cyan
-        "DM": "\033[90m",    # dim notes  - grey
-        "R":  "\033[0m",     # reset
-    }
-
-
 def print_compact_help():
-    """Print compact command listing (coloured)"""
-    c = _ansi_colors()
-    TI, HD, CM, FL, DM, R = c["TI"], c["HD"], c["CM"], c["FL"], c["DM"], c["R"]
-
-    print(f"{TI}doompal{R} - Doom palette and colormap tool {DM}v{__version__}{R}")
+    """Print compact command listing"""
+    print("doompal - Doom palette and colormap tool")
     print()
-    print(f"{HD}USAGE:{R}")
-    print(f"  doompal {FL}<input>{R}                                    Auto-batch mode")
-    print(f"  doompal {CM}<command>{R} {FL}<input> [output] [options]{R}")
+    print("USAGE:")
+    print("  doompal <input>                                    Auto-batch mode")
+    print("  doompal <command> <input> [output] [options]")
     print()
-    print(f"{HD}COMMANDS:{R}")
-    print(f"  {CM}cube{R}      {FL}<input> [output.cube]{R}                   Generate .cube LUT for image editors")
-    print(f"  {CM}batch{R}     {FL}<input> <o>{R}                             Generate all files (cube, playpal, colormap, split)")
-    print(f"  {CM}playpal{R}   {FL}<input> [output] [--slade] [--blank]{R}    Generate 256×14 PLAYPAL")
-    print(f"  {CM}colormap{R}  {FL}<input> <o> [--blank]{R}                   Generate 256×34 colormap with lighting")
-    print(f"  {CM}blank{R}     {FL}<input> <o>{R}                             Generate blank playpal + colormap (no tints/lighting)")
-    print(f"  {CM}slade{R}     {FL}<input> <o> [--all] [--cell N]{R}          Generate SLADE-style 16×16 grid palette")
-    print(f"  {CM}extract{R}   {FL}<wad> [output] [options]{R}                Extract PLAYPAL/COLORMAP from WAD")
-    print(f"  {CM}split{R}     {FL}<input> <o>{R}                             Generate transparent tint overlay PNG")
-    print(f"  {CM}cleanpal{R}  {FL}<input> [--rgb] [--tolerance N]{R}         Find duplicate/similar pal0 entries")
-    print(f"            {FL}[--layers]{R}")
+    print("COMMANDS:")
+    print("  cube      <input> [output.cube]                   Generate .cube LUT for image editors")
+    print("  batch     <input> <o>                             Generate all files (cube, playpal, colormap, split)")
+    print("  playpal   <input> [output] [--slade] [--blank]    Generate 256×14 PLAYPAL")
+    print("  colormap  <input> <o> [--blank]                   Generate 256×34 colormap with lighting")
+    print("  blank     <input> <o>                             Generate blank playpal + colormap (no tints/lighting)")
+    print("  slade     <input> <o> [--all] [--cell N]          Generate SLADE-style 16×16 grid palette")
+    print("  extract   <wad> [output] [options]                Extract PLAYPAL/COLORMAP from WAD")
+    print("  split     <input> <o>                             Generate transparent tint overlay PNG")
     print()
-    print(f"{HD}COMMAND DETAILS:{R}")
-    print(f"  {CM}cube{R}        Inputs pal0, outputs LUT cube for sRGB image editing apps")
+    print("COMMAND DETAILS:")
+    print("  cube        Inputs pal0, outputs LUT cube for sRGB image editing apps")
     print()
-    print(f"  {CM}batch{R}       Inputs pal0, outputs:")
+    print("  batch       Inputs pal0, outputs:")
     print("              - .cube LUT file")
     print("              - 256×14 playpal.png")
     print("              - 256×34 colormap.png")
     print("              - transparent tint split.png")
     print()
-    print(f"  {CM}playpal{R}     Input pal0, output 256×14 playpal PNG")
-    print(f"              {FL}--slade{R} : Output binary playpal.pal instead of PNG")
-    print(f"              {FL}--blank{R} : All 14 rows same (no tinting)")
+    print("  playpal     Input pal0, output 256×14 playpal PNG")
+    print("              --slade : Output binary playpal.pal instead of PNG")
+    print("              --blank : All 14 rows same (no tinting)")
     print()
-    print(f"  {CM}colormap{R}    Input pal0, generate primary colormap with lighting")
-    print(f"              {FL}--blank{R} : No lighting (full brightness rows 0-31)")
+    print("  colormap    Input pal0, generate primary colormap with lighting")
+    print("              --blank : No lighting (full brightness rows 0-31)")
     print()
-    print(f"  {CM}blank{R}       Input pal0, output both:")
+    print("  blank       Input pal0, output both:")
     print("              - blank playpal (no tints)")
     print("              - blank colormap (no lighting)")
     print()
-    print(f"  {CM}slade{R}       Input palette, generate SLADE-style 16×16 grid pal0.png")
-    print(f"              {FL}--playpal{R} : Output binary playpal.pal (14 palettes) instead of PNG")
-    print(f"              {FL}--cell N{R} : Cell size (default 8 = 128×128 output)")
+    print("  slade       Input palette, generate SLADE-style 16×16 grid pal0.png")
+    print("              --playpal : Output binary playpal.pal (14 palettes) instead of PNG")
+    print("              --cell N : Cell size (default 8 = 128×128 output)")
     print()
-    print(f"  {CM}extract{R}     Extract from WAD (PLAYPAL + primary COLORMAP if found)")
-    print(f"              {FL}--boom LUMPNAME{R} : Extract specific Boom colormap")
-    print(f"              {FL}--boom{R} : Extract all Boom colormaps")
-    print(f"              {FL}--boomlist{R} : List all Boom colormaps in WAD")
+    print("  extract     Extract from WAD (PLAYPAL + primary COLORMAP if found)")
+    print("              --boom [LUMPNAME] : Extract specific Boom colormap")
+    print("              --boom : Extract all Boom colormaps")
+    print("              --boomlist : List all Boom colormaps in WAD")
     print()
-    print(f"  {CM}split{R}       Input pal0, output transparent overlay PNG showing")
+    print("  split       Input pal0, output transparent overlay PNG showing")
     print("              damage/item/radsuit tints (apply to blank playpals)")
     print()
-    print(f"  {CM}cleanpal{R}    Find IDENTICAL (exact) and SIMILAR (perceptual) pal0")
-    print("              entries. Lowest index kept, rest cleared. Outputs")
-    print("              identical/simular (cleared pixels, original positions,")
-    print("              transparent bg) and aligned (kept colours packed from")
-    print("              slot 0, transparent tail). Never auto-batched.")
-    print(f"              {FL}--rgb{R} : Weighted RGB metric (default tolerance 1.1)")
-    print("                      instead of CIE Lab dE76 (default 2.0)")
-    print(f"              {FL}--tolerance N{R} : Override tolerance (decimals ok)")
-    print(f"              {FL}--layers{R} : One PNG per set/cluster (-keepNNN files)")
+    print("SUPPORTED INPUT FORMATS:")
+    print("  - playpal.pal        SLADE binary (14 palettes, 10752 bytes)")
+    print("  - pal0.pal           SLADE binary (single palette, 768 bytes)")
+    print("  - pal0.png           256×1 PNG (DoomTools style)")
+    print("  - playpal.png        256×14 PNG (DoomTools style)")
+    print("  - colormap.png       256×34 PNG (extracts row 0 as pal0)")
+    print("  - slade_pal0.png     16×16 grid PNG (SLADE style)")
+    print("  - *.wad              WAD files (extracts PLAYPAL lump)")
     print()
-    print(f"{HD}SUPPORTED INPUT FORMATS:{R}")
-    print(f"  - {FL}playpal.pal{R}        SLADE binary (14 palettes, 10752 bytes)")
-    print(f"  - {FL}pal0.pal{R}           SLADE binary (single palette, 768 bytes)")
-    print(f"  - {FL}pal0.png{R}           256×1 PNG (DoomTools style)")
-    print(f"  - {FL}playpal.png{R}        256×14 PNG (DoomTools style)")
-    print(f"  - {FL}colormap.png{R}       256×34 PNG (extracts row 0 as pal0)")
-    print(f"  - {FL}slade_pal0.png{R}     16×16 grid PNG (SLADE style)")
-    print(f"  - {FL}*.wad{R}              WAD files (extracts PLAYPAL lump)")
+    print("  Note: Binary colormap lumps (.cmp) are NOT valid inputs")
     print()
-    print(f"  {DM}Note: Binary colormap lumps (.cmp) are NOT valid inputs{R}")
+    print("OPTIONS:")
+    print("  -h, --help           Show this help")
+    print("  --version            Show version")
     print()
-    print(f"{HD}OPTIONS:{R}")
-    print(f"  {FL}-h, --help{R}           Show this help")
-    print(f"  {FL}--version{R}            Show version")
-    print()
-    print(f"{HD}NOTES:{R}")
-    print(f"  {DM}Running 'doompal <inputfile>' with no command automatically runs batch mode{R}")
-    print()
-    print(f"{HD}EXAMPLES:{R}")
-    print(f"  {CM}doompal{R} mywad.wad")
-    print(f"      {DM}Auto-batch: cube + playpal + colormap + split from the WAD's PLAYPAL{R}")
-    print(f"  {CM}doompal cube{R} pal0.png")
-    print(f"      {DM}Make a .cube LUT for image editors{R}")
-    print(f"  {CM}doompal playpal{R} pal0.pal playpal.png {FL}--blank{R}")
-    print(f"      {DM}Blank 256×14 playpal PNG (all rows identical, no tints){R}")
-    print(f"  {CM}doompal slade{R} playpal.pal mypal {FL}--cell 16{R}")
-    print(f"      {DM}SLADE-style grid at 256×256 (16px cells){R}")
-    print(f"  {CM}doompal extract{R} doom2.wad {FL}--boomlist{R}")
-    print(f"      {DM}List Boom colormaps inside a WAD{R}")
-    print(f"  {CM}doompal cleanpal{R} playpal.png")
-    print(f"      {DM}Duplicate/similar colour analysis (CIE Lab, tolerance 2.0){R}")
-    print(f"  {CM}doompal cleanpal{R} doom2.wad {FL}--tolerance 2.3 --layers{R}")
-    print(f"      {DM}Analyse the WAD's PLAYPAL, plus one PNG per duplicate group{R}")
-    print(f"  {CM}doompal cleanpal{R} pal0.png {FL}--rgb{R}")
-    print(f"      {DM}Legacy weighted-RGB metric (tolerance 1.1){R}")
+    print("NOTES:")
+    print("  Running 'doompal <inputfile>' with no command automatically runs batch mode")
 
 
 
@@ -1753,269 +1699,6 @@ def cmd_split(args):
         return 1
 
 
-# ============================================================================
-# MODULE: cleanpal.py
-# ============================================================================
-
-CLEANPAL_DEFAULT_TOL_LAB = "2.0"
-CLEANPAL_DEFAULT_TOL_RGB = "1.1"
-
-
-def _srgb_to_lab(r, g, b):
-    """Convert sRGB (0-255) to CIE Lab (D65)."""
-    def lin(c):
-        c /= 255.0
-        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
-
-    rl, gl, bl = lin(r), lin(g), lin(b)
-    x = rl * 0.4124564 + gl * 0.3575761 + bl * 0.1804375
-    y = rl * 0.2126729 + gl * 0.7151522 + bl * 0.0721750
-    z = rl * 0.0193339 + gl * 0.1191920 + bl * 0.9503041
-    xn, yn, zn = 0.95047, 1.00000, 1.08883
-
-    def f(t):
-        return t ** (1.0 / 3.0) if t > 0.008856 else 7.787 * t + 16.0 / 116.0
-
-    fx, fy, fz = f(x / xn), f(y / yn), f(z / zn)
-    return (116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz))
-
-
-class _CleanpalUF:
-    """Union-find (disjoint sets) for transitive similarity clustering."""
-
-    def __init__(self, n):
-        self.p = list(range(n))
-        self.r = [0] * n
-
-    def find(self, x):
-        while self.p[x] != x:
-            self.p[x] = self.p[self.p[x]]
-            x = self.p[x]
-        return x
-
-    def union(self, a, b):
-        ra, rb = self.find(a), self.find(b)
-        if ra == rb:
-            return
-        if self.r[ra] < self.r[rb]:
-            self.p[ra] = rb
-        elif self.r[ra] > self.r[rb]:
-            self.p[rb] = ra
-        else:
-            self.p[rb] = ra
-            self.r[ra] += 1
-
-
-def _cleanpal_geometry(path):
-    """
-    Work out output canvas + paint geometry for cleanpal, based on the
-    input file type.
-
-    Returns (label, canvas_wh, paint_wh, paint_xy_fn).
-      SLADE grid PNG -> input size, blocks of the input's cell size
-      strip PNGs     -> 256 x rows, full-height 1px columns
-      .pal / .wad    -> 256 x 1, single pixels
-    """
-    ext = Path(path).suffix.lower()
-    if ext == ".wad":
-        return ("WAD PLAYPAL", (COLORS, 1), (1, 1), lambda s: (s, 0))
-
-    kind = detect_palette_type(str(path))
-
-    if kind == "sladeStylePNG":
-        with Image.open(path) as im:
-            w, h = im.size
-        cw, ch = w // GRID_SIZE, h // GRID_SIZE
-        return (
-            f"SLADE grid ({w}x{h}, {cw}x{ch} cells)",
-            (w, h),
-            (cw, ch),
-            lambda s: ((s % GRID_SIZE) * cw, (s // GRID_SIZE) * ch),
-        )
-
-    if kind in ("playpal14PNG", "playpal1PNG", "colormap34PNG"):
-        with Image.open(path) as im:
-            w, h = im.size
-        rows = h // (w // COLORS)  # normalise scaled strips
-        return (
-            f"strip PNG (256x{rows}, row 0 = pal0)",
-            (COLORS, rows),
-            (1, rows),
-            lambda s: (s, 0),
-        )
-
-    if kind in ("playpal.pal binary", "pal0.pal Binary"):
-        return ("binary pal0", (COLORS, 1), (1, 1), lambda s: (s, 0))
-
-    raise ValueError(f"Unsupported input for cleanpal: {path}")
-
-
-def _cleanpal_paint(img, paint_xy, paint_wh, slot, rgb):
-    """Paint one palette entry onto an RGBA canvas."""
-    x0, y0 = paint_xy(slot)
-    pw, ph = paint_wh
-    px = img.load()
-    for dy in range(ph):
-        for dx in range(pw):
-            px[x0 + dx, y0 + dy] = (rgb[0], rgb[1], rgb[2], 255)
-
-
-def cmd_cleanpal(args):
-    """
-    Find IDENTICAL (exact RGB) and SIMILAR (perceptual, transitive
-    clusters) pal0 entries. Lowest index of each set/cluster is kept,
-    the rest are cleared.
-
-    Outputs (next to the input):
-      name-identical-(TYPE-tol).png  cleared identical pixels, original
-                                     positions, transparent background
-      name-simular-(TYPE-tol).png    cleared similar pixels, same treatment
-      name-aligned-(TYPE-tol).png    kept colours packed from slot 0,
-                                     tail transparent
-      --layers adds one PNG per set/cluster: ...-keepNNN.png
-    """
-    input_path = args.input
-
-    if input_path is None or not Path(input_path).is_file():
-        print(f"ERROR: Input file not found: {input_path}", file=sys.stderr)
-        return 1
-
-    use_lab = not args.rgb
-    tol_str = args.tolerance if args.tolerance is not None else (
-        CLEANPAL_DEFAULT_TOL_LAB if use_lab else CLEANPAL_DEFAULT_TOL_RGB
-    )
-    try:
-        tol = float(tol_str)
-        if tol < 0:
-            raise ValueError
-    except ValueError:
-        print(f"ERROR: Invalid tolerance value: {tol_str}", file=sys.stderr)
-        return 1
-
-    mtype = "CIE" if use_lab else "RGB"
-    token = f"({mtype}-{tol_str})"
-
-    # ---- load pal0 + geometry ----
-    try:
-        input_path = Path(input_path)
-        if input_path.suffix.lower() == ".wad":
-            data = extract_playpal(input_path)
-            if data is None:
-                print("ERROR: No PLAYPAL lump found in WAD", file=sys.stderr)
-                return 1
-            palette = extract_palette_from_binary(data, 0)
-        else:
-            palette = load_palette(input_path)
-        label, canvas, paint_wh, paint_xy = _cleanpal_geometry(input_path)
-    except Exception as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        return 1
-
-    labs = [_srgb_to_lab(r, g, b) for (r, g, b) in palette]
-
-    def dist(a, b):
-        if use_lab:
-            dl = labs[a][0] - labs[b][0]
-            da = labs[a][1] - labs[b][1]
-            db = labs[a][2] - labs[b][2]
-            return (dl * dl + da * da + db * db) ** 0.5
-        dr = abs(palette[a][0] - palette[b][0])
-        dg = abs(palette[a][1] - palette[b][1])
-        db = abs(palette[a][2] - palette[b][2])
-        return ((0.299 * dr) ** 2 + (0.587 * dg) ** 2 + (0.114 * db) ** 2) ** 0.5
-
-    # ---- IDENTICAL (exact RGB) ----
-    exact_map = {}
-    for idx, rgb in enumerate(palette):
-        exact_map.setdefault(rgb, []).append(idx)
-    identical_groups = sorted(
-        (sorted(v) for v in exact_map.values() if len(v) >= 2),
-        key=lambda g: g[0],
-    )
-
-    # ---- SIMILAR (transitive clustering, exact pairs excluded) ----
-    uf = _CleanpalUF(COLORS)
-    for a in range(COLORS):
-        for b in range(a + 1, COLORS):
-            if palette[a] == palette[b]:
-                continue  # exact dupes are IDENTICAL's job
-            if dist(a, b) <= tol:
-                uf.union(a, b)
-    clusters = {}
-    for i in range(COLORS):
-        clusters.setdefault(uf.find(i), []).append(i)
-    similar_groups = sorted(
-        (sorted(v) for v in clusters.values() if len(v) >= 2),
-        key=lambda g: g[0],
-    )
-
-    # ---- cleared set (keep lowest index of every group) ----
-    cleared = set()
-    for grp in identical_groups:
-        cleared.update(grp[1:])
-    for grp in similar_groups:
-        cleared.update(grp[1:])
-    kept = [i for i in range(COLORS) if i not in cleared]
-
-    base = input_path.parent / input_path.stem
-    written = []
-
-    def new_canvas():
-        return Image.new("RGBA", canvas, (0, 0, 0, 0))
-
-    def paint_groups(groups):
-        img = new_canvas()
-        for grp in groups:
-            for idx in grp[1:]:
-                _cleanpal_paint(img, paint_xy, paint_wh, idx, palette[idx])
-        return img
-
-    # ---- identical / simular / aligned ----
-    p = Path(f"{base}-identical-{token}.png")
-    paint_groups(identical_groups).save(p)
-    written.append(p)
-
-    p = Path(f"{base}-simular-{token}.png")
-    paint_groups(similar_groups).save(p)
-    written.append(p)
-
-    img = new_canvas()
-    for slot, idx in enumerate(kept):
-        _cleanpal_paint(img, paint_xy, paint_wh, slot, palette[idx])
-    p = Path(f"{base}-aligned-{token}.png")
-    img.save(p)
-    written.append(p)
-
-    # ---- per-group layer files ----
-    if args.layers:
-        for name, groups in (
-            ("identical", identical_groups),
-            ("simular", similar_groups),
-        ):
-            for grp in groups:
-                img = new_canvas()
-                for idx in grp[1:]:
-                    _cleanpal_paint(img, paint_xy, paint_wh, idx, palette[idx])
-                p = Path(f"{base}-{name}-{token}-keep{grp[0]:03d}.png")
-                img.save(p)
-                written.append(p)
-
-    # ---- summary ----
-    print(f"Input : {input_path}  [{label}]")
-    print(
-        "Metric: %s, tolerance <= %s"
-        % ("CIE Lab dE76" if use_lab else "Weighted RGB", tol_str)
-    )
-    print(
-        f"IDENTICAL sets: {len(identical_groups)}   "
-        f"SIMILAR clusters: {len(similar_groups)}"
-    )
-    print(f"Kept: {len(kept)}   Cleared: {len(cleared)}")
-    print(f"Wrote {len(written)} file(s):")
-    for p in written:
-        print(f"  {p}")
-    return 0
-
 
 # ============================================================================
 # MAIN
@@ -2042,28 +1725,16 @@ def main():
     # Determine command
     command = sys.argv[1]
     known_commands = ['cube', 'batch', 'playpal', 'colormap', 'colourmap', 
-                      'blank', 'slade', 'extract', 'split', 'cleanpal']
+                      'blank', 'slade', 'extract', 'split']
     
     if command not in known_commands:
-        # Auto-batch mode (note: cleanpal is never auto-run; it must be
-        # called explicitly)
+        # Auto-batch mode
         command = 'batch'
         input_path = Path(sys.argv[1])
         cmd_args = [sys.argv[1], input_path.stem] + sys.argv[2:]
     else:
-        # Filter out flags (and flag values) from positional args
-        value_flags = ('--tolerance', '--cell')
-        cmd_args = []
-        skip_next = False
-        for arg in sys.argv[2:]:
-            if skip_next:
-                skip_next = False
-                continue
-            if arg in value_flags:
-                skip_next = True
-                continue
-            if not arg.startswith('-'):
-                cmd_args.append(arg)
+        # Filter out flags from positional args
+        cmd_args = [arg for arg in sys.argv[2:] if not arg.startswith('-')]
     
     # Build args object
     args = Args(
@@ -2075,21 +1746,16 @@ def main():
         playpal='--playpal' in sys.argv,
         boom='--boom' in sys.argv or '-boom' in sys.argv,
         boom_list='--boomlist' in sys.argv or '-boomlist' in sys.argv,
-        rgb='--rgb' in sys.argv or '-rgb' in sys.argv,
-        layers='--layers' in sys.argv or '-layers' in sys.argv,
-        tolerance=None,
         cell=8
     )
     
-    # Extract --cell / --tolerance values if present
+    # Extract --cell value if present
     for i, arg in enumerate(sys.argv):
         if arg == '--cell' and i+1 < len(sys.argv):
             try:
                 args.cell = int(sys.argv[i+1])
             except ValueError:
                 pass
-        if arg == '--tolerance' and i+1 < len(sys.argv):
-            args.tolerance = sys.argv[i+1]
     
     # Route to command handler
     try:
@@ -2109,8 +1775,6 @@ def main():
             return cmd_extract(args)
         elif command == 'split':
             return cmd_split(args)
-        elif command == 'cleanpal':
-            return cmd_cleanpal(args)
         else:
             print(f"ERROR: Unknown command: {command}", file=sys.stderr)
             return 1
