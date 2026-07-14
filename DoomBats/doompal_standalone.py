@@ -2,12 +2,28 @@
 """doompal - Doom palette and colormap tool (Standalone Version)"""
 import sys
 import os
+import re
 import struct
 from pathlib import Path
-from PIL import Image
-import numpy as np
 
-__version__ = "1.1.0"
+# Dependency check
+_missing = []
+try:
+    from PIL import Image
+except ImportError:
+    _missing.append("Pillow")
+try:
+    import numpy as np
+except ImportError:
+    _missing.append("numpy")
+if _missing:
+    sys.stderr.write(
+        "ERROR: Missing dependencies: " + ", ".join(_missing) + "\n"
+        "Install with: pip install " + " ".join(_missing) + "\n"
+    )
+    sys.exit(1)
+
+__version__ = "1.2.0"
 
 
 # ============================================================================
@@ -84,16 +100,30 @@ def detect_palette_type(path):
     Detect the type of palette file.
     
     Returns one of:
+        - "playpalWAD": WAD file (palette comes from its PLAYPAL lump)
         - "playpal14PNG": 256×14 PNG
         - "playpal1PNG": 256×1 PNG  
         - "colormap34PNG": 256×34 PNG (colormap - uses row 0 as palette)
         - "sladeStylePNG": 16×16 grid PNG
-        - "playpal.pal binary": 10752 bytes (all 14 palettes)
+        - "playpalNPNG": 256×N PNG, N > 1 (generic multi-palette strip,
+                         e.g. Hexen's 256×27)
+        - "playpal.pal binary": any multiple of 768 bytes > 768
+                                (Doom = 10752 / 14 palettes, Hexen = 27, ...)
         - "pal0.pal Binary": 768 bytes (single palette)
         - "colormap.cmp binary": 8704 bytes (colormap - needs companion PLAYPAL)
         - None: Unknown format
     """
     if not os.path.isfile(path):
+        return None
+
+    # WAD files: palette is sourced from the PLAYPAL lump
+    if str(path).lower().endswith(".wad"):
+        try:
+            with open(path, "rb") as f:
+                if f.read(4) in (b"IWAD", b"PWAD"):
+                    return "playpalWAD"
+        except OSError:
+            pass
         return None
 
     if is_png(path):
@@ -109,17 +139,23 @@ def detect_palette_type(path):
             if (w >= GRID_SIZE and h >= GRID_SIZE) and \
                (w % GRID_SIZE == 0) and (h % GRID_SIZE == 0):
                 return "sladeStylePNG"
+            # Generic multi-palette strip (e.g. Hexen 256×27), scaled allowed
+            if w % COLORS == 0:
+                scale = w // COLORS
+                if scale > 0 and h % scale == 0 and (h // scale) > 1:
+                    return "playpalNPNG"
         return None
 
     # For binary files, use byte size
     size = os.path.getsize(path)
     
-    if size == PLAYPAL_SIZE_BYTES:
-        return "playpal.pal binary"
     if size == BYTES_PER_PALETTE:
         return "pal0.pal Binary"
     if size == COLORMAP_SIZE_BYTES:
         return "colormap.cmp binary"
+    if size % BYTES_PER_PALETTE == 0 and size > BYTES_PER_PALETTE:
+        # Any multi-palette binary (Doom 10752, Hexen 20736, ...)
+        return "playpal.pal binary"
 
     return None
 
@@ -240,8 +276,16 @@ def load_palette(path, palette_index=0):
     if kind is None:
         raise ValueError(f"Unsupported palette format: {path}")
     
+    # Handle WAD files: palette comes from the PLAYPAL lump
+    if kind == "playpalWAD":
+        data = extract_playpal(path)
+        if data is None:
+            raise ValueError(f"No PLAYPAL lump found in WAD: {path}")
+        return extract_palette_from_binary(data, palette_index)
+    
     # Handle PNG formats
-    if kind in ("playpal14PNG", "playpal1PNG", "colormap34PNG", "sladeStylePNG"):
+    if kind in ("playpal14PNG", "playpal1PNG", "colormap34PNG",
+                "sladeStylePNG", "playpalNPNG"):
         with Image.open(path) as img:
             # Force conversion to sRGB colorspace
             # Some images may have palette mode or other color modes that need explicit conversion
@@ -254,7 +298,8 @@ def load_palette(path, palette_index=0):
                 img = img.convert("RGB")
             
             # Now img is guaranteed to be RGB mode
-            if kind in ("playpal14PNG", "playpal1PNG", "colormap34PNG"):
+            if kind in ("playpal14PNG", "playpal1PNG", "colormap34PNG",
+                        "playpalNPNG"):
                 # All use first row (row 0) as the palette
                 return extract_palette_from_strip(img)
             else:  # sladeStylePNG
@@ -267,21 +312,35 @@ def load_palette(path, palette_index=0):
 
 def load_all_palettes(path):
     """
-    Load all 14 palettes from a PLAYPAL file.
+    Load all palettes from a multi-palette source. The palette count is
+    derived from the source itself (Doom = 14, Hexen = 27, ...).
     
     Args:
-        path: Path to PLAYPAL file (.pal or .png with 14 rows)
+        path: Path to multi-palette source (playpal PNG, playpal.pal
+              binary, or WAD containing a PLAYPAL lump)
         
     Returns:
-        List of 14 palettes, each a list of 256 (r, g, b) tuples
+        List of palettes, each a list of 256 (r, g, b) tuples
         
     Raises:
-        ValueError: If file doesn't contain 14 palettes
+        ValueError: If file doesn't contain multiple palettes
     """
     path = Path(path)
     kind = detect_palette_type(str(path))
     
-    if kind == "playpal14PNG":
+    if kind == "playpalWAD":
+        data = extract_playpal(path)
+        if data is None:
+            raise ValueError(f"No PLAYPAL lump found in WAD: {path}")
+        if len(data) < BYTES_PER_PALETTE or len(data) % BYTES_PER_PALETTE != 0:
+            raise ValueError(
+                f"PLAYPAL lump has invalid size: {len(data)} bytes "
+                f"(must be a multiple of {BYTES_PER_PALETTE})"
+            )
+        count = len(data) // BYTES_PER_PALETTE
+        return [extract_palette_from_binary(data, i) for i in range(count)]
+    
+    if kind in ("playpal14PNG", "playpalNPNG"):
         with Image.open(path) as img:
             img = img.convert("RGB")
             w, h = img.size
@@ -293,10 +352,11 @@ def load_all_palettes(path):
             if scale > 1:
                 img = img.resize((COLORS, h // scale), Image.NEAREST)
             
+            rows = img.size[1]
             px = img.load()
             palettes = []
             
-            for row in range(14):
+            for row in range(rows):
                 pal = []
                 for x in range(COLORS):
                     r, g, b = px[x, row][:3]
@@ -307,10 +367,11 @@ def load_all_palettes(path):
     
     elif kind == "playpal.pal binary":
         data = path.read_bytes()
-        return [extract_palette_from_binary(data, i) for i in range(14)]
+        count = len(data) // BYTES_PER_PALETTE
+        return [extract_palette_from_binary(data, i) for i in range(count)]
     
     else:
-        raise ValueError(f"File does not contain 14 palettes: {path}")
+        raise ValueError(f"File does not contain multiple palettes: {path}")
 
 
 def _clamp8(x):
@@ -907,48 +968,28 @@ def print_compact_help():
     print(f"  doompal {CM}<command>{R} {FL}<input> [output] [options]{R}")
     print()
     print(f"{HD}COMMANDS:{R}")
-    print(f"  {CM}cube{R}      {FL}<input> [output.cube]{R}                   Generate .cube LUT for image editors")
-    print(f"  {CM}batch{R}     {FL}<input> <o>{R}                             Generate all files (cube, playpal, colormap, split)")
-    print(f"  {CM}playpal{R}   {FL}<input> [output] [--slade] [--blank]{R}    Generate 256×14 PLAYPAL")
-    print(f"  {CM}colormap{R}  {FL}<input> <o> [--blank]{R}                   Generate 256×34 colormap with lighting")
-    print(f"  {CM}blank{R}     {FL}<input> <o>{R}                             Generate blank playpal + colormap (no tints/lighting)")
-    print(f"  {CM}slade{R}     {FL}<input> <o> [--all] [--cell N]{R}          Generate SLADE-style 16×16 grid palette")
-    print(f"  {CM}extract{R}   {FL}<wad> [output] [options]{R}                Extract PLAYPAL/COLORMAP from WAD")
-    print(f"  {CM}split{R}     {FL}<input> <o>{R}                             Generate transparent tint overlay PNG")
+    print(f"  {CM}batch{R}     {FL}<input> [output]{R}                        Generate all files (cube, playpal, colormap, split)")
+    print(f"  {CM}blank{R}     {FL}<input> [output]{R}                        Generate blank playpal + colormap (no tints/lighting)")
     print(f"  {CM}cleanpal{R}  {FL}<input> [--rgb] [--tolerance N]{R}         Find duplicate/similar pal0 entries")
-    print(f"            {FL}[--layers]{R}")
+    print(f"            {FL}[--layers] [--lastfirst]{R}")
+    print(f"  {CM}colormap{R}  {FL}<input> [output] [--blank]{R}              Generate 256×34 colormap with lighting")
+    print(f"  {CM}cube{R}      {FL}<input> [output.cube]{R}                   Generate .cube LUT for image editors")
+    print(f"  {CM}extract{R}   {FL}<wad> [output] [options]{R}                Extract PLAYPAL/COLORMAP from WAD")
+    print(f"  {CM}palx{R}      {FL}<input> [output] <selection> [options]{R}  Extract individual palettes as PNGs")
+    print(f"  {CM}playpal{R}   {FL}<input> [output] [--slade] [--blank]{R}    Generate 256×N PLAYPAL")
+    print(f"  {CM}slade{R}     {FL}<input> [output] [--playpal] [--cell N]{R} Generate SLADE-style 16×16 grid palette")
+    print(f"  {CM}split{R}     {FL}<input> [output]{R}                        Generate transparent tint overlay PNG")
     print()
     print(f"{HD}COMMAND DETAILS:{R}")
-    print(f"  {CM}cube{R}        Inputs pal0, outputs LUT cube for sRGB image editing apps")
-    print()
     print(f"  {CM}batch{R}       Inputs pal0, outputs:")
     print("              - .cube LUT file")
     print("              - 256×14 playpal.png")
     print("              - 256×34 colormap.png")
     print("              - transparent tint split.png")
     print()
-    print(f"  {CM}playpal{R}     Input pal0, output 256×14 playpal PNG")
-    print(f"              {FL}--slade{R} : Output binary playpal.pal instead of PNG")
-    print(f"              {FL}--blank{R} : All 14 rows same (no tinting)")
-    print()
-    print(f"  {CM}colormap{R}    Input pal0, generate primary colormap with lighting")
-    print(f"              {FL}--blank{R} : No lighting (full brightness rows 0-31)")
-    print()
     print(f"  {CM}blank{R}       Input pal0, output both:")
     print("              - blank playpal (no tints)")
     print("              - blank colormap (no lighting)")
-    print()
-    print(f"  {CM}slade{R}       Input palette, generate SLADE-style 16×16 grid pal0.png")
-    print(f"              {FL}--playpal{R} : Output binary playpal.pal (14 palettes) instead of PNG")
-    print(f"              {FL}--cell N{R} : Cell size (default 8 = 128×128 output)")
-    print()
-    print(f"  {CM}extract{R}     Extract from WAD (PLAYPAL + primary COLORMAP if found)")
-    print(f"              {FL}--boom LUMPNAME{R} : Extract specific Boom colormap")
-    print(f"              {FL}--boom{R} : Extract all Boom colormaps")
-    print(f"              {FL}--boomlist{R} : List all Boom colormaps in WAD")
-    print()
-    print(f"  {CM}split{R}       Input pal0, output transparent overlay PNG showing")
-    print("              damage/item/radsuit tints (apply to blank playpals)")
     print()
     print(f"  {CM}cleanpal{R}    Find IDENTICAL (exact) and SIMILAR (perceptual) pal0")
     print("              entries. Lowest index kept, rest cleared. Outputs")
@@ -959,15 +1000,56 @@ def print_compact_help():
     print("                      instead of CIE Lab dE76 (default 2.0)")
     print(f"              {FL}--tolerance N{R} : Override tolerance (decimals ok)")
     print(f"              {FL}--layers{R} : One PNG per set/cluster (-keepNNN files)")
+    print(f"              {FL}--lastfirst{R} : Keep the HIGHEST index of each group")
+    print("                      instead of the lowest (1,5,10 -> 10 kept)")
+    print()
+    print(f"  {CM}colormap{R}    Input pal0, generate primary colormap with lighting")
+    print(f"              {FL}--blank{R} : No lighting (full brightness rows 0-31)")
+    print()
+    print(f"  {CM}cube{R}        Inputs pal0, outputs LUT cube for sRGB image editing apps")
+    print()
+    print(f"  {CM}extract{R}     Extract from WAD (PLAYPAL + primary COLORMAP if found)")
+    print(f"              {FL}--boom LUMPNAME{R} : Extract specific Boom colormap")
+    print(f"              {FL}--boom{R} : Extract all Boom colormaps")
+    print(f"              {FL}--boomlist{R} : List all Boom colormaps in WAD")
+    print()
+    print(f"  {CM}palx{R}        Input multi-palette source (playpal PNG / .pal / WAD),")
+    print("              output individual palettes as PNG images. Zero-indexed,")
+    print("              count derived from source. Single-palette inputs error.")
+    print(f"              {FL}--palN{R}      : Single palette (e.g. --pal3)")
+    print(f"              {FL}--palN-M{R}    : Inclusive range (e.g. --pal10-13)")
+    print(f"              {FL}--palAll{R}    : All palettes found in source")
+    print(f"              {FL}--palPain{R}   : Damage tints (pal 1-8)")
+    print(f"              {FL}--palItem{R}   : Bonus tints (pal 9-12)")
+    print(f"              {FL}--palRad{R}    : Radsuit tint (pal 13)")
+    print(f"              {FL}--slade{R}     : SLADE-style 16×16 grid PNGs ({FL}--cell N{R} sizes cells)")
+    print(f"              {FL}--composite{R} : One full-height RGBA playpal PNG, selected rows")
+    print("                            filled, rest transparent (ignored with --slade)")
+    print("              Default output is 256×1 DoomTools-style strips,")
+    print("              named {base}_palN.png")
+    print()
+    print(f"  {CM}playpal{R}     Input palette, output 256×N playpal PNG (N from source,")
+    print("              Doom = 14, Hexen = 27; single palettes expand to 14)")
+    print(f"              {FL}--slade{R} : Output binary playpal.pal instead of PNG")
+    print(f"              {FL}--blank{R} : All rows same (no tinting)")
+    print()
+    print(f"  {CM}slade{R}       Input palette, generate SLADE-style 16×16 grid pal0.png")
+    print(f"              {FL}--playpal{R} : Output binary playpal.pal (all palettes) instead of PNG")
+    print(f"              {FL}--cell N{R} : Cell size (default 8 = 128×128 output)")
+    print()
+    print(f"  {CM}split{R}       Input pal0, output transparent overlay PNG showing")
+    print("              damage/item/radsuit tints (apply to blank playpals)")
     print()
     print(f"{HD}SUPPORTED INPUT FORMATS:{R}")
-    print(f"  - {FL}playpal.pal{R}        SLADE binary (14 palettes, 10752 bytes)")
+    print(f"  - {FL}playpal.pal{R}        SLADE binary (any multiple of 768 bytes:")
+    print("                       Doom = 14 pals / 10752 bytes, Hexen = 27, ...)")
     print(f"  - {FL}pal0.pal{R}           SLADE binary (single palette, 768 bytes)")
     print(f"  - {FL}pal0.png{R}           256×1 PNG (DoomTools style)")
-    print(f"  - {FL}playpal.png{R}        256×14 PNG (DoomTools style)")
+    print(f"  - {FL}playpal.png{R}        256×N PNG (DoomTools style, N > 1)")
     print(f"  - {FL}colormap.png{R}       256×34 PNG (extracts row 0 as pal0)")
     print(f"  - {FL}slade_pal0.png{R}     16×16 grid PNG (SLADE style)")
-    print(f"  - {FL}*.wad{R}              WAD files (extracts PLAYPAL lump)")
+    print(f"  - {FL}*.wad{R}              WAD files - accepted by every command;")
+    print("                       uses the PLAYPAL lump, errors if not found")
     print()
     print(f"  {DM}Note: Binary colormap lumps (.cmp) are NOT valid inputs{R}")
     print()
@@ -977,6 +1059,7 @@ def print_compact_help():
     print()
     print(f"{HD}NOTES:{R}")
     print(f"  {DM}Running 'doompal <inputfile>' with no command automatically runs batch mode{R}")
+    print(f"  {DM}All --flags also accept a single dash (-slade, -blank, -pal3, ...){R}")
     print()
     print(f"{HD}EXAMPLES:{R}")
     print(f"  {CM}doompal{R} mywad.wad")
@@ -987,6 +1070,14 @@ def print_compact_help():
     print(f"      {DM}Blank 256×14 playpal PNG (all rows identical, no tints){R}")
     print(f"  {CM}doompal slade{R} playpal.pal mypal {FL}--cell 16{R}")
     print(f"      {DM}SLADE-style grid at 256×256 (16px cells){R}")
+    print(f"  {CM}doompal palx{R} doom2.wad {FL}--palPain{R}")
+    print(f"      {DM}Rip damage palettes 1-8 as 256×1 strip PNGs{R}")
+    print(f"  {CM}doompal palx{R} playpal.pal {FL}--pal10-13 --slade{R}")
+    print(f"      {DM}Palettes 10-13 as SLADE-style 16×16 grid PNGs{R}")
+    print(f"  {CM}doompal palx{R} hexen.wad {FL}--palAll{R}")
+    print(f"      {DM}Every palette in the source (Hexen = 27) as strip PNGs{R}")
+    print(f"  {CM}doompal palx{R} playpal.png {FL}--palItem --composite{R}")
+    print(f"      {DM}Full-height RGBA playpal, only rows 9-12 filled{R}")
     print(f"  {CM}doompal extract{R} doom2.wad {FL}--boomlist{R}")
     print(f"      {DM}List Boom colormaps inside a WAD{R}")
     print(f"  {CM}doompal cleanpal{R} playpal.png")
@@ -1001,6 +1092,40 @@ def print_compact_help():
 # ============================================================================
 # COMMAND FUNCTIONS
 # ============================================================================
+
+# Kinds that contain more than one palette
+MULTI_PALETTE_KINDS = ("playpal14PNG", "playpalNPNG",
+                       "playpal.pal binary", "playpalWAD")
+
+
+def _write_strip_png(palette, path):
+    """Write a single palette as a 256×1 DoomTools-style strip PNG"""
+    img = Image.new("RGB", (COLORS, 1))
+    px = img.load()
+    for x in range(COLORS):
+        px[x, 0] = palette[x]
+    img.save(path)
+
+
+def _write_grid_png(palette, path, cell_size=8):
+    """Write a single palette as a SLADE-style 16×16 grid PNG"""
+    size = GRID_SIZE * cell_size
+    img = Image.new("RGB", (size, size))
+    px = img.load()
+    
+    idx = 0
+    for gy in range(GRID_SIZE):
+        for gx in range(GRID_SIZE):
+            color = palette[idx]
+            x0 = gx * cell_size
+            y0 = gy * cell_size
+            for yy in range(y0, y0 + cell_size):
+                for xx in range(x0, x0 + cell_size):
+                    px[xx, yy] = color
+            idx += 1
+    
+    img.save(path)
+
 
 def cmd_cube(args):
     """Generate .cube LUT from palette"""
@@ -1019,17 +1144,8 @@ def cmd_cube(args):
     try:
         print(f"Loading palette from: {input_path}")
         
-        # Handle WAD files
-        if input_path.suffix.lower() == ".wad":
-            data = extract_playpal(input_path)
-            if data is None:
-                print(f"ERROR: PLAYPAL not found in WAD: {input_path}", file=sys.stderr)
-                return 1
-            
-            # Extract pal0 from PLAYPAL
-            palette = extract_palette_from_binary(data, 0)
-        else:
-            palette = load_palette(input_path)
+        # WAD input handled by load_palette (PLAYPAL lump)
+        palette = load_palette(input_path)
         
         print(f"Generating HALD CLUT and converting to .cube...")
         
@@ -1056,6 +1172,11 @@ def cmd_batch(args):
     """Generate all outputs (cube, playpal, colormap, split)"""
     input_path = args.input
     output_base = args.output
+    
+    # Default output base: input stem, next to the input
+    # (auto-batch mode already supplies the stem)
+    if output_base is None:
+        output_base = input_path.parent / input_path.stem
     
     try:
         # Check if input is a WAD file
@@ -1337,18 +1458,17 @@ def cmd_playpal(args):
     try:
         print(f"Loading palette from: {input_path}")
         
-        # Try to load all 14 palettes
         kind = detect_palette_type(str(input_path))
         
-        if kind in ("playpal14PNG", "playpal.pal binary"):
-            # Has 14 palettes
+        if kind in MULTI_PALETTE_KINDS:
+            # Multi-palette source - count derived from source
+            # (Doom = 14, Hexen = 27, ...)
+            palettes = load_all_palettes(input_path)
             if args.blank:
-                # Blank mode: use only pal0 for all 14 rows
-                palette = load_palette(input_path, palette_index=0)
-                palettes = [palette] * 14
-                print("Note: Generating blank PLAYPAL (all 14 rows same as pal0)")
-            else:
-                palettes = load_all_palettes(input_path)
+                # Blank mode: use only pal0 for all rows
+                palettes = [palettes[0]] * len(palettes)
+                print(f"Note: Generating blank PLAYPAL "
+                      f"(all {len(palettes)} rows same as pal0)")
         else:
             # Single palette
             palette = load_palette(input_path)
@@ -1361,24 +1481,27 @@ def cmd_playpal(args):
                 palettes = expand_palette_to_14(palette)
                 print("Note: Single palette detected, generating 14 palettes with damage/bonus/radsuit tints")
         
+        rows = len(palettes)
+        
         if args.slade:
             # Write SLADE-compatible binary .pal file
             with open(output_path, "wb") as f:
                 for pal in palettes:
                     for r, g, b in pal:
                         f.write(bytes((r, g, b)))
-            print(f"Successfully wrote SLADE playpal.pal: {output_path}")
+            print(f"Successfully wrote SLADE playpal.pal: {output_path} "
+                  f"({rows * BYTES_PER_PALETTE} bytes)")
         else:
-            # Create 256×14 PNG
-            img = Image.new("RGB", (COLORS, 14))
+            # Create 256×N PNG
+            img = Image.new("RGB", (COLORS, rows))
             px = img.load()
             
-            for row in range(14):
+            for row in range(rows):
                 for col in range(COLORS):
                     px[col, row] = palettes[row][col]
             
             img.save(output_path)
-            print(f"Successfully wrote: {output_path}")
+            print(f"Successfully wrote: {output_path} (256×{rows})")
         
         return 0
         
@@ -1387,10 +1510,195 @@ def cmd_playpal(args):
         return 1
 
 
+# Named palette ranges for the palx command (Doom conventions)
+_PALX_NAMED = {
+    "pain": (1, 8),    # damage/berserk red tints
+    "item": (9, 12),   # bonus pickup yellow tints
+    "rad": (13, 13),   # radiation suit green tint
+}
+
+
+def parse_palx_flags(argv):
+    """
+    Parse palette-selection flags for the palx command from argv.
+    
+    Recognised (case-insensitive, single or double dash):
+        --palN      single palette      (--pal3)
+        --palN-M    inclusive range     (--pal10-13)
+        --palAll    all found palettes
+        --palPain   alias for --pal1-8
+        --palItem   alias for --pal9-12
+        --palRad    alias for --pal13
+    
+    Returns:
+        (specs, errors)
+        specs:  list of ('all', token) or ('range', a, b, token)
+        errors: list of error message strings for malformed flags
+    """
+    specs = []
+    errors = []
+    
+    for tok in argv[2:]:
+        if not tok.startswith('-'):
+            continue
+        body = tok.lstrip('-').lower()
+        if not body.startswith('pal'):
+            continue
+        rest = body[3:]
+        
+        if rest == '':
+            errors.append(f"Incomplete palette flag: {tok}")
+            continue
+        if rest == 'all':
+            specs.append(('all', tok))
+            continue
+        if rest in _PALX_NAMED:
+            a, b = _PALX_NAMED[rest]
+            specs.append(('range', a, b, tok))
+            continue
+        
+        m = re.fullmatch(r'(\d+)(?:-(\d+))?', rest)
+        if m:
+            a = int(m.group(1))
+            b = int(m.group(2)) if m.group(2) is not None else a
+            if b < a:
+                errors.append(
+                    f"Reversed range: {tok} (did you mean --pal{b}-{a}?)"
+                )
+            else:
+                specs.append(('range', a, b, tok))
+            continue
+        
+        errors.append(f"Unknown palette selection flag: {tok}")
+    
+    return specs, errors
+
+
+def cmd_palx(args):
+    """
+    Extract individual palettes from a multi-palette source as PNG images.
+    
+    Input must contain multiple palettes: a playpal PNG (256×N), a binary
+    playpal.pal, or a WAD with a PLAYPAL lump. Single-palette inputs error.
+    
+    Selection: --palN, --palN-M, --palAll, --palPain, --palItem, --palRad
+    (multiple flags union together).
+    
+    Output style:
+        default     : one 256×1 DoomTools-style strip PNG per palette
+        --slade     : one 16×16 grid PNG per palette (--cell N, default 8)
+        --composite : ONE full-height RGBA playpal PNG - selected rows
+                      filled, all other rows transparent
+                      (silently ignored when --slade is set)
+    
+    Files are named {base}_palN.png (zero-indexed from the source).
+    """
+    input_path = args.input
+    
+    if input_path is None or not Path(input_path).is_file():
+        print(f"ERROR: Input file not found: {input_path}", file=sys.stderr)
+        return 1
+    
+    # Malformed selection flags
+    if args.palx_errors:
+        for e in args.palx_errors:
+            print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    
+    if not args.palx_specs:
+        print("ERROR: No palettes selected. Use --palN, --palN-M, --palAll, "
+              "--palPain, --palItem or --palRad", file=sys.stderr)
+        return 1
+    
+    # ---- load source (must be multi-palette) ----
+    try:
+        kind = detect_palette_type(str(input_path))
+        if kind is None:
+            raise ValueError(f"Unsupported palette format: {input_path}")
+        if kind not in MULTI_PALETTE_KINDS:
+            raise ValueError(
+                "Input contains only a single palette - palx requires a "
+                "multi-palette source (playpal PNG, playpal.pal or WAD)"
+            )
+        palettes = load_all_palettes(input_path)
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    
+    count = len(palettes)
+    
+    # ---- resolve selection against actual palette count ----
+    selected = set()
+    for spec in args.palx_specs:
+        if spec[0] == 'all':
+            selected.update(range(count))
+        else:
+            _, a, b, tok = spec
+            if b >= count:
+                print(f"ERROR: {tok} is out of range - source contains "
+                      f"{count} palettes (valid: 0-{count - 1})",
+                      file=sys.stderr)
+                return 1
+            selected.update(range(a, b + 1))
+    
+    indices = sorted(selected)
+    
+    # ---- output base ----
+    if args.output:
+        base = str(args.output)
+    else:
+        base = str(input_path.parent / input_path.stem)
+    
+    written = []
+    
+    try:
+        if args.slade:
+            # SLADE-style grid PNG per palette (--composite ignored)
+            for i in indices:
+                p = Path(f"{base}_pal{i}.png")
+                _write_grid_png(palettes[i], p, args.cell)
+                written.append(p)
+        elif args.composite:
+            # One full-height RGBA playpal: selected rows filled,
+            # everything else transparent
+            p = Path(f"{base}_composite.png")
+            img = Image.new("RGBA", (COLORS, count), (0, 0, 0, 0))
+            px = img.load()
+            for i in indices:
+                for x in range(COLORS):
+                    r, g, b = palettes[i][x]
+                    px[x, i] = (r, g, b, 255)
+            img.save(p)
+            written.append(p)
+        else:
+            # DoomTools-style 256×1 strip PNG per palette
+            for i in indices:
+                p = Path(f"{base}_pal{i}.png")
+                _write_strip_png(palettes[i], p)
+                written.append(p)
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    
+    print(f"Source: {input_path} ({count} palettes)")
+    print(f"Selected: {', '.join(str(i) for i in indices)}")
+    print(f"Wrote {len(written)} file(s):")
+    for p in written:
+        print(f"  {p}")
+    return 0
+
+
 def cmd_colormap(args):
     """Generate 256×34 colormap PNG with or without lighting"""
     input_path = args.input
     output_path = args.output
+    
+    # Default output: {input_stem}_colormap.png next to the input
+    if output_path is None:
+        output_path = input_path.with_stem(
+            f"{input_path.stem}_colormap").with_suffix(".png")
+    elif not str(output_path).lower().endswith(".png"):
+        output_path = Path(str(output_path) + ".png")
     
     try:
         print(f"Loading palette from: {input_path}")
@@ -1417,6 +1725,10 @@ def cmd_blank(args):
     """Generate blank PLAYPAL and COLORMAP (no tints, no lighting)"""
     input_path = args.input
     output_base = args.output
+    
+    # Default output base: input stem, next to the input
+    if output_base is None:
+        output_base = input_path.parent / input_path.stem
     
     try:
         print(f"Loading palette from: {input_path}")
@@ -1471,12 +1783,12 @@ def cmd_slade(args):
     try:
         print(f"Loading palette from: {input_path}")
         
-        # Determine if we have 14 palettes or just 1
+        # Determine if we have multiple palettes or just 1
         kind = detect_palette_type(str(input_path))
         
-        # Always try to get/generate 14 palettes for --playpal
-        if kind in ("playpal14PNG", "playpal.pal binary"):
-            # Load all 14 palettes
+        # Always try to get/generate all palettes for --playpal
+        if kind in MULTI_PALETTE_KINDS:
+            # Load all palettes (count derived from source)
             palettes = load_all_palettes(input_path)
         else:
             # Single palette - expand to 14 with tints
@@ -1484,50 +1796,31 @@ def cmd_slade(args):
             palettes = expand_palette_to_14(palette)
             print("Note: Expanding single palette to 14 with tints")
         
-        # Handle --playpal flag (output binary .pal file with all 14 palettes)
+        # Handle --playpal flag (output binary .pal file with all palettes)
         if args.playpal:
             output_path = Path(output_base)
             # Don't double-add extension
             if not str(output_path).endswith('.pal'):
                 output_path = Path(str(output_path) + '.pal')
             
-            print(f"Writing binary playpal.pal (14 palettes)...")
+            print(f"Writing binary playpal.pal ({len(palettes)} palettes)...")
             with open(output_path, 'wb') as f:
                 for pal in palettes:
                     for r, g, b in pal:
                         f.write(bytes((r, g, b)))
             
-            print(f"Wrote: {output_path} (10752 bytes)")
+            print(f"Wrote: {output_path} "
+                  f"({len(palettes) * BYTES_PER_PALETTE} bytes)")
             return 0
         
         # Generate grid PNG (just pal0)
-        grid_size = GRID_SIZE * cell_size  # 16 * 8 = 128 by default
-        pal = palettes[0]  # Just pal0
-        
-        # Create 16×16 grid
-        img = Image.new("RGB", (grid_size, grid_size))
-        px = img.load()
-        
-        idx = 0
-        for gy in range(GRID_SIZE):
-            for gx in range(GRID_SIZE):
-                color = pal[idx]
-                
-                # Fill cell
-                x0 = gx * cell_size
-                y0 = gy * cell_size
-                for yy in range(y0, y0 + cell_size):
-                    for xx in range(x0, x0 + cell_size):
-                        px[xx, yy] = color
-                
-                idx += 1
-        
         # Don't double-add .png extension
         output_path = Path(output_base + "_pal0")
         if not str(output_path).endswith('.png'):
             output_path = Path(str(output_path) + '.png')
         
-        img.save(output_path)
+        _write_grid_png(palettes[0], output_path, cell_size)
+        grid_size = GRID_SIZE * cell_size  # 16 * 8 = 128 by default
         print(f"Wrote: {output_path} ({grid_size}×{grid_size})")
         
         return 0
@@ -1539,7 +1832,11 @@ def cmd_slade(args):
 
 def cmd_extract(args):
     """Extract PLAYPAL and COLORMAP from WAD"""
-    wad_path = args.wad
+    wad_path = args.input
+    
+    if wad_path is None or not Path(wad_path).is_file():
+        print(f"ERROR: WAD file not found: {wad_path}", file=sys.stderr)
+        return 1
     
     # Determine output base name
     if args.output:
@@ -1692,8 +1989,12 @@ def cmd_split(args):
     input_path = args.input
     output_path = args.output
     
+    # Default output: {input_stem}_split.png next to the input
+    if output_path is None:
+        output_path = input_path.with_stem(
+            f"{input_path.stem}_split").with_suffix(".png")
     # Auto-add .png extension if not present
-    if not str(output_path).lower().endswith('.png'):
+    elif not str(output_path).lower().endswith('.png'):
         output_path = Path(str(output_path) + '.png')
     
     try:
@@ -1864,7 +2165,9 @@ def cmd_cleanpal(args):
     """
     Find IDENTICAL (exact RGB) and SIMILAR (perceptual, transitive
     clusters) pal0 entries. Lowest index of each set/cluster is kept,
-    the rest are cleared.
+    the rest are cleared. With --lastfirst, the HIGHEST index is kept
+    instead (e.g. group 1,5,10: normally 1 kept, 5+10 cleared; with
+    --lastfirst, 10 kept, 1+5 cleared).
 
     Outputs (next to the input):
       name-identical-(TYPE-tol).png  cleared identical pixels, original
@@ -1898,14 +2201,8 @@ def cmd_cleanpal(args):
     # ---- load pal0 + geometry ----
     try:
         input_path = Path(input_path)
-        if input_path.suffix.lower() == ".wad":
-            data = extract_playpal(input_path)
-            if data is None:
-                print("ERROR: No PLAYPAL lump found in WAD", file=sys.stderr)
-                return 1
-            palette = extract_palette_from_binary(data, 0)
-        else:
-            palette = load_palette(input_path)
+        # WAD input handled by load_palette (PLAYPAL lump)
+        palette = load_palette(input_path)
         label, canvas, paint_wh, paint_xy = _cleanpal_geometry(input_path)
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
@@ -1949,12 +2246,22 @@ def cmd_cleanpal(args):
         key=lambda g: g[0],
     )
 
-    # ---- cleared set (keep lowest index of every group) ----
+    # ---- cleared set ----
+    # Default: keep the LOWEST index of every group, clear the rest.
+    # --lastfirst: keep the HIGHEST index instead.
+    lastfirst = getattr(args, 'lastfirst', False)
+
+    def split_group(grp):
+        """Return (kept_index, cleared_indices) for a sorted group."""
+        if lastfirst:
+            return grp[-1], grp[:-1]
+        return grp[0], grp[1:]
+
     cleared = set()
     for grp in identical_groups:
-        cleared.update(grp[1:])
+        cleared.update(split_group(grp)[1])
     for grp in similar_groups:
-        cleared.update(grp[1:])
+        cleared.update(split_group(grp)[1])
     kept = [i for i in range(COLORS) if i not in cleared]
 
     base = input_path.parent / input_path.stem
@@ -1966,7 +2273,7 @@ def cmd_cleanpal(args):
     def paint_groups(groups):
         img = new_canvas()
         for grp in groups:
-            for idx in grp[1:]:
+            for idx in split_group(grp)[1]:
                 _cleanpal_paint(img, paint_xy, paint_wh, idx, palette[idx])
         return img
 
@@ -1993,10 +2300,11 @@ def cmd_cleanpal(args):
             ("simular", similar_groups),
         ):
             for grp in groups:
+                keep_idx, clear_idxs = split_group(grp)
                 img = new_canvas()
-                for idx in grp[1:]:
+                for idx in clear_idxs:
                     _cleanpal_paint(img, paint_xy, paint_wh, idx, palette[idx])
-                p = Path(f"{base}-{name}-{token}-keep{grp[0]:03d}.png")
+                p = Path(f"{base}-{name}-{token}-keep{keep_idx:03d}.png")
                 img.save(p)
                 written.append(p)
 
@@ -2006,6 +2314,9 @@ def cmd_cleanpal(args):
         "Metric: %s, tolerance <= %s"
         % ("CIE Lab dE76" if use_lab else "Weighted RGB", tol_str)
     )
+    print("Keep  : %s index of each group%s"
+          % ("last" if lastfirst else "first",
+             " (--lastfirst)" if lastfirst else ""))
     print(
         f"IDENTICAL sets: {len(identical_groups)}   "
         f"SIMILAR clusters: {len(similar_groups)}"
@@ -2035,61 +2346,99 @@ def main():
         print_compact_help()
         return 0
     
-    if sys.argv[1] in ['--version', '-v']:
+    if sys.argv[1] in ['--version', '-version', '-v']:
         print(f"doompal version {__version__}")
         return 0
     
     # Determine command
     command = sys.argv[1]
-    known_commands = ['cube', 'batch', 'playpal', 'colormap', 'colourmap', 
-                      'blank', 'slade', 'extract', 'split', 'cleanpal']
+    known_commands = ['cube', 'batch', 'playpal', 'palx', 'colormap',
+                      'colourmap', 'blank', 'slade', 'extract', 'split',
+                      'cleanpal']
+    
+    argv = sys.argv
+    
+    def flag(name):
+        """True if --name or -name is present on the command line"""
+        return ('--' + name) in argv or ('-' + name) in argv
+    
+    # Work out which argv positions are values consumed by flags:
+    #   --cell / --tolerance always take the next token
+    #   --boom optionally takes a lump name (next token, if not a flag)
+    consumed = set()
+    boom = None
+    for i, a in enumerate(argv):
+        if a in ('--cell', '-cell', '--tolerance', '-tolerance'):
+            if i + 1 < len(argv):
+                consumed.add(i + 1)
+        elif a in ('--boom', '-boom'):
+            if i + 1 < len(argv) and not argv[i + 1].startswith('-'):
+                boom = argv[i + 1]
+                consumed.add(i + 1)
+            else:
+                boom = "__all__"
     
     if command not in known_commands:
-        # Auto-batch mode (note: cleanpal is never auto-run; it must be
-        # called explicitly)
+        # Auto-batch mode (note: cleanpal and palx are never auto-run;
+        # they must be called explicitly)
+        input_candidate = Path(sys.argv[1])
+        if not input_candidate.is_file():
+            print(f"ERROR: '{sys.argv[1]}' is not a known command or an "
+                  f"existing input file", file=sys.stderr)
+            # Looks like a palette selection? Point at palx
+            if re.fullmatch(r'-{0,2}pal(\d+(?:-\d+)?|all|pain|item|rad)',
+                            sys.argv[1].lower()):
+                print(f"Did you mean: doompal palx <input> "
+                      f"--{sys.argv[1].lstrip('-')}", file=sys.stderr)
+            cmds = sorted(c for c in known_commands if c != 'colourmap')
+            print(f"Commands: {', '.join(cmds)}", file=sys.stderr)
+            print("Run 'doompal --help' for usage", file=sys.stderr)
+            return 1
         command = 'batch'
-        input_path = Path(sys.argv[1])
-        cmd_args = [sys.argv[1], input_path.stem] + sys.argv[2:]
+        input_path = input_candidate
+        cmd_args = [sys.argv[1], input_path.stem] + \
+            [a for i, a in enumerate(argv[2:], start=2)
+             if i not in consumed and not a.startswith('-')]
     else:
         # Filter out flags (and flag values) from positional args
-        value_flags = ('--tolerance', '--cell')
-        cmd_args = []
-        skip_next = False
-        for arg in sys.argv[2:]:
-            if skip_next:
-                skip_next = False
-                continue
-            if arg in value_flags:
-                skip_next = True
-                continue
-            if not arg.startswith('-'):
-                cmd_args.append(arg)
+        cmd_args = [a for i, a in enumerate(argv[2:], start=2)
+                    if i not in consumed and not a.startswith('-')]
     
-    # Build args object
+    # Parse palx palette-selection flags (--palN / --palN-M / --palAll /
+    # --palPain / --palItem / --palRad)
+    palx_specs, palx_errors = ([], [])
+    if command == 'palx':
+        palx_specs, palx_errors = parse_palx_flags(argv)
+    
+    # Build args object (all flags accept -- or - prefix)
     args = Args(
         input=Path(cmd_args[0]) if len(cmd_args) > 0 else None,
         output=Path(cmd_args[1]) if len(cmd_args) > 1 else None,
-        slade='--slade' in sys.argv or '-slade' in sys.argv,
-        blank='--blank' in sys.argv,
-        all='--all' in sys.argv or '-all' in sys.argv,
-        playpal='--playpal' in sys.argv,
-        boom='--boom' in sys.argv or '-boom' in sys.argv,
-        boom_list='--boomlist' in sys.argv or '-boomlist' in sys.argv,
-        rgb='--rgb' in sys.argv or '-rgb' in sys.argv,
-        layers='--layers' in sys.argv or '-layers' in sys.argv,
+        slade=flag('slade'),
+        blank=flag('blank'),
+        all=flag('all'),
+        playpal=flag('playpal'),
+        boom=boom,
+        boomlist=flag('boomlist'),
+        rgb=flag('rgb'),
+        layers=flag('layers'),
+        lastfirst=flag('lastfirst'),
+        composite=flag('composite'),
         tolerance=None,
-        cell=8
+        cell=8,
+        palx_specs=palx_specs,
+        palx_errors=palx_errors
     )
     
     # Extract --cell / --tolerance values if present
-    for i, arg in enumerate(sys.argv):
-        if arg == '--cell' and i+1 < len(sys.argv):
+    for i, arg in enumerate(argv):
+        if arg in ('--cell', '-cell') and i + 1 < len(argv):
             try:
-                args.cell = int(sys.argv[i+1])
+                args.cell = int(argv[i + 1])
             except ValueError:
                 pass
-        if arg == '--tolerance' and i+1 < len(sys.argv):
-            args.tolerance = sys.argv[i+1]
+        if arg in ('--tolerance', '-tolerance') and i + 1 < len(argv):
+            args.tolerance = argv[i + 1]
     
     # Route to command handler
     try:
@@ -2099,6 +2448,8 @@ def main():
             return cmd_batch(args)
         elif command == 'playpal':
             return cmd_playpal(args)
+        elif command == 'palx':
+            return cmd_palx(args)
         elif command in ['colormap', 'colourmap']:
             return cmd_colormap(args)
         elif command == 'blank':
