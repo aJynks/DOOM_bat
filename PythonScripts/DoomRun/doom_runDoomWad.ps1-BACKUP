@@ -30,11 +30,11 @@ $iwads = @{
 # Pak definitions (loaded BEFORE folder-selected WAD, and also BEFORE DoomMake release/dehacked WADs)
 $pak = @{
     "pak1" = @(
-        "d:\Projects\DoomProjects\_SourcePorts\_Wads and Mods\_tweaks\NyanDoom\aJynksed-exHUD.wad",
+        "d:\Projects\DoomProjects\_SourcePorts\_paks\extHUD_dsda-nyan_VERTICAL_MapName.wad",
         "d:\Projects\DoomProjects\_SourcePorts\_paks\statusBar-GFXonly-Glasses.wad"
     )
     "pak2" = @(
-        "d:\Projects\DoomProjects\_SourcePorts\_Wads and Mods\_tweaks\NyanDoom\kat-exHUD.wad",
+        "d:\Projects\DoomProjects\_SourcePorts\_paks\extHUD_dsda-nyan_VERTICAL_Time.MapName.wad",
         "d:\Projects\DoomProjects\_SourcePorts\_paks\statusBar-GFXonly-Helmet.wad"
     )
     "origGuns" = @(
@@ -156,9 +156,6 @@ function Show-Help {
     Write-Host "  - dehacked is OPTIONAL (if missing, it is ignored)" -ForegroundColor White
     Write-Host "  - warp/skill are DEFAULTS only; CLI overrides them if provided" -ForegroundColor White
     Write-Host "  - If you include the word 'menu' anywhere (project folders only), warp/skill are ignored." -ForegroundColor White
-    Write-Host "  - --skip : omit the release WAD entirely (ignored outside project folders)" -ForegroundColor White
-    Write-Host "             Useful when passing a custom -file directly:" -ForegroundColor Gray
-    Write-Host "             doom doom -nosound -warp 1 1 -file build\editor-assets.wad --skip" -ForegroundColor Gray
 
     Write-SectionHeader "OPTIONS PASS-THROUGH"
     Write-Host "  Any arguments not recognised as PORT/IWAD/PAK are passed to the port." -ForegroundColor White
@@ -615,20 +612,6 @@ function Read-DoomLoaderConf {
 }
 
 #-------------------------------------------------------------------------------------------------
-# --skip flag: strip from raw args unconditionally; only meaningful in DoomMake mode
-
-$skipRelease = $false
-$command_raw_clean = @()
-foreach ($a in $command_raw) {
-    if ($null -ne $a -and $a.ToString() -ine "--skip") {
-        $command_raw_clean += $a
-    } else {
-        $skipRelease = $true
-    }
-}
-$command_raw = $command_raw_clean
-
-#-------------------------------------------------------------------------------------------------
 # Detect DoomMake project in current directory
 
 $cwd = Get-Location
@@ -680,7 +663,6 @@ if ($hasDoomMakeProject) {
     $usedPakNames = @()
     $inAddMode = $false
     $portExplicitlySet = $false
-    $iwadExplicitlySet = $false
 
     foreach ($arg in $command_raw) {
 
@@ -695,7 +677,6 @@ if ($hasDoomMakeProject) {
         if ($iwads.ContainsKey($arg)) {
             $usediWad = $iwads[$arg]
             $usedIwadName = $arg
-            $iwadExplicitlySet = $true
             continue
         }
 
@@ -723,8 +704,8 @@ if ($hasDoomMakeProject) {
         }
 
         $filteredArgs += $arg
-    } # override defaults with conf values, unless user explicitly set them on the CLI
-    if (-not $iwadExplicitlySet -and -not [string]::IsNullOrWhiteSpace($loader.iwad)) {
+    } # override whatever the defaults were
+    if (-not [string]::IsNullOrWhiteSpace($loader.iwad)) {
         $usediWad = $loader.iwad
         $usedIwadName = "conf"
     }
@@ -752,19 +733,17 @@ if ($hasDoomMakeProject) {
     }
 
     # Resolve loader paths relative to current directory
-    if (-not $skipRelease) {
-        if ([string]::IsNullOrWhiteSpace($loader.release)) {
-            Show-BoxedError @(
-                "-- Error : doom-loader.conf missing key <release> --"
-            )
-            exit 1
-        }
-
-        $releasePath = Join-Path $cwd $loader.release
-
-        # release is REQUIRED (unless --skip was passed)
-        Validate-Path $releasePath "Project WAD" "release"
+    if ([string]::IsNullOrWhiteSpace($loader.release)) {
+        Show-BoxedError @(
+            "-- Error : doom-loader.conf missing key <release> --"
+        )
+        exit 1
     }
+
+    $releasePath = Join-Path $cwd $loader.release
+
+    # release is REQUIRED
+    Validate-Path $releasePath "Project WAD" "release"
 
     # Chocolate Doom / CRL need the compiled DEH loaded separately.
     # This intentionally checks ./build/dehacked.deh, not the dehacked WAD entry.
@@ -776,11 +755,11 @@ if ($hasDoomMakeProject) {
         }
     }
 
-    # Build PWAD merge/file list: pak(s) first, then release (unless --skip), then --add pak(s) last.
+    # Build PWAD merge/file list: pak(s) first, then release, then --add pak(s) last.
     # The .deh patch is NOT put in this list; it is appended as -deh after the PWADs.
     $fileList = @()
     if ($pakWads.Count -gt 0) { $fileList += $pakWads }
-    if (-not $skipRelease) { $fileList += $releasePath }
+    $fileList += $releasePath
     if ($addPakWads.Count -gt 0) { $fileList += $addPakWads }
 
     if ($menuMode) {
@@ -811,11 +790,7 @@ if ($hasDoomMakeProject) {
 
     $loadCmd = Get-LoadCommand -PortName $usedPortName
 
-    if ($fileList.Count -gt 0) {
-        $launchArgs = @("-iwad", $usediWad, $loadCmd) + $fileList
-    } else {
-        $launchArgs = @("-iwad", $usediWad)
-    }
+    $launchArgs = @("-iwad", $usediWad, $loadCmd) + $fileList
     if ($dehackedDehPath -ne $null) {
         $launchArgs += @("-deh", $dehackedDehPath)
     }

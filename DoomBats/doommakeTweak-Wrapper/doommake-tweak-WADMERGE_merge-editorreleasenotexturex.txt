@@ -1,62 +1,50 @@
 # ===========================================================================
-# WadMerge Script — Textures Release WAD (with MAP99)
+# WadMerge Script — Editor Release WAD (no TEXTURE1/2, PNAMES, ANIMATED, SWITCHES)
 # ===========================================================================
-# Same as the no-map variant, but also merges in a single MAP99 wad.
-# Used when MAP99 is present.
+# Identical to the editor release WAD, but with texture definition lumps
+# stripped out. Instead of merging textures.wad wholesale, the texture
+# sources are merged directly — flats, patches, and mergetexturedir blocks
+# only; mergedeutexfile and mergeswantbls are omitted.
+#
+# No MAP99 check — this target never includes maps.
 #
 # Argument 0: The build directory.
 # Argument 1: The source directory.
-# Argument 2: The output WAD.
-# Argument 3: Full path to the MAP99 wad to merge in.
+# Argument 2: The output WAD name (editor-assets-release-notexturex.wad)
 # ===========================================================================
 
 # Turn all carats/circumflexes in filenames into backslashes in entries.
 filecharsub ^ \
 
 create out
-
+datemarker out __VER__
 mergefile  out $1/wadinfo.txt
 mergefile  out $1/credits.txt
 
-# Palettes
-mergedir  out $1/assets/palettes nomarkers
-mergedir  out $0/convert/palettes nomarkers
+mergefile  out $0/dehacked.deh DEHACKED
+mergewad   out $0/assets.wad
 
-# Primary Colormaps
-mergedir  out $1/assets/colormaps nomarkers
-mergedir  out $0/convert/colormaps nomarkers
+# Inline texture sources — omitting mergedeutexfile and mergeswantbls
+# (no TEXTURE1, TEXTURE2, PNAMES, ANIMATED, SWITCHES)
 
-# Secondary Colormaps
-marker    out c_start
-mergedir  out $1/assets/colormaps-secondary nomarkers
-mergedir  out $0/convert/colormaps-secondary nomarkers
-marker    out c_end
-
-# Create texture
-mergedeutexfile    out $1/textures/texture1.txt
-mergedeutexfile    out $1/textures/texture2.txt
-mergeswantbls      out $1/textures/defswani.txt
-
-# Merge Flats
+# Flats
 marker             out ff_start
 mergenamespacefile out $1/textures/animflats.wad ff
 mergedir           out $1/textures/flats
 mergedir           out $0/convert/flats
 marker             out ff_end
 
-# Merge Patches
+# Patches
 marker             out pp_start
 mergedir           out $1/textures/patches
 mergedir           out $0/convert/patches
 marker             out pp_end
 
-# Merge Additional Single-Patch Textures
+# Single-patch textures
 mergetexturedir    out $1/textures/texture1 texture1
 mergetexturedir    out $0/convert/texture1 texture1
 mergetexturedir    out $1/textures/texture2 texture2
 mergetexturedir    out $0/convert/texture2 texture2
-
-mergewad out $3
 
 finish out $0/$2
 end

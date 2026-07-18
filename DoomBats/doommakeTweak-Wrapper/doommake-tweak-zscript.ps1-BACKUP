@@ -37,26 +37,20 @@ $FileTemplates = @(
 )
 
 # ----------------------------------------------------------------------------
-# Entry Targets to DELETE from doommake.script (stock versions).
-# Modified versions are re-added at the end of the file via $AppendBlocks.
+# Entry Targets to fully replace: ConfFile / EntryName
 # ----------------------------------------------------------------------------
-$EntryDeletions = @(
-    "make"
-    "release"
+$EntryReplacements = @(
+    @{ ConfFile = "doommake-tweak_FUNC-REPLACE_make.conf";    EntryName = "make" }
+    @{ ConfFile = "doommake-tweak_FUNC-REPLACE_release.conf"; EntryName = "release" }
 )
 
 # ----------------------------------------------------------------------------
-# Blocks to Append to the END of doommake.script, in listed order.
-# Each file's FIRST LINE is a unique marker comment used only for duplicate
-# detection - it is stripped before appending. The START OF TWEAK banner
-# lives in the first file and the END OF TWEAK footer lives in the last,
-# so nothing is hardcoded here.
+# Blocks to Insert into doommake.script (functions + entry targets),
+# placed just before the first stock "check entry", in listed order
 # ----------------------------------------------------------------------------
 $AppendBlocks = @(
     "doommake-tweak_FUNC-MAKE-TARGETS_all.conf"
     "doommake-tweak_FUNC-MAKE-TARGETS_final.conf"
-    "doommake-tweak_FUNC-REPLACE_make.conf"
-    "doommake-tweak_FUNC-REPLACE_release.conf"
 )
 
 # ============================================================================
@@ -152,36 +146,44 @@ if ($copiedCount -eq 0) {
 }
 
 # ============================================================================
-# STEP 3: Delete Stock Entry Targets
+# STEP 3: Replace Entry Targets (full-function replace)
 # ============================================================================
-# The stock `make` and `release` entries call only stock functions, but our
-# modified versions call tweak functions (doDehWad, doPalette). RookScript
-# requires functions to be defined before they are called, so the modified
-# entries must live BELOW the tweak functions. We delete the stock entries
-# here; modified versions are re-added at the end of the file in STEP 4.
-# The `/**** TARGET: ... ****/` comment block directly above each entry is
-# deleted with it, so no orphaned headers are left behind.
 
 Write-Host ""
-Write-Host "STEP 3: Deleting stock entry targets..." -ForegroundColor Cyan
+Write-Host "STEP 3: Replacing entry targets..." -ForegroundColor Cyan
 
 $scriptPath = ".\doommake.script"
 
-# Function to delete a "check entry <name>(args) { ... }" block and the
-# comment block immediately above it, no matter how many nested braces
-# are inside the entry.
-function Remove-CheckEntry {
+# Function to fully replace a "check entry <name>(args) { ... }" block,
+# no matter how many nested braces/functions are inside it.
+function Replace-CheckEntry {
     param(
+        [string]$ConfFile,
         [string]$EntryName
     )
 
+    $confPath = Join-Path $PSScriptRoot $ConfFile
+
+    if (!(Test-Path $confPath)) {
+        Write-Host "  [WARNING] Config file not found: $ConfFile" -ForegroundColor Red
+        return
+    }
+
+    $newBlock = (Get-Content $confPath -Raw).TrimEnd()
+    $markerLine = ($newBlock -split "`r?`n")[0].Trim()
+
     $scriptContent = Get-Content $scriptPath -Raw
+
+    if ($scriptContent.Contains($markerLine)) {
+        Write-Host "  [Skipped] '$EntryName' already replaced (marker found)" -ForegroundColor Yellow
+        return
+    }
 
     $startPattern = "check entry $EntryName\(args\)\s*\{"
     $m = [regex]::Match($scriptContent, $startPattern)
 
     if (-not $m.Success) {
-        Write-Host "  [Skipped] 'check entry $EntryName(args)' not found (already deleted?)" -ForegroundColor Yellow
+        Write-Host "  [WARNING] Could not find 'check entry $EntryName(args)' in doommake.script" -ForegroundColor Red
         return
     }
 
@@ -209,80 +211,74 @@ function Remove-CheckEntry {
         return
     }
 
-    # Extend the deletion start backwards to include the /**** TARGET ****/
-    # comment block directly above the entry, if one is there. Only do so
-    # if nothing but whitespace/comment text sits between it and the entry.
-    $deleteStart = $m.Index
-    $commentStart = $scriptContent.LastIndexOf("/****", $m.Index)
-    if ($commentStart -ge 0) {
-        $between = $scriptContent.Substring($commentStart, $m.Index - $commentStart)
-        if ($between -notmatch '\}') {
-            $deleteStart = $commentStart
-        }
-    }
-
-    $scriptContent = $scriptContent.Substring(0, $deleteStart).TrimEnd() + "`r`n`r`n" + $scriptContent.Substring($endIndex + 1).TrimStart("`r", "`n")
+    $scriptContent = $scriptContent.Substring(0, $m.Index) + $newBlock + $scriptContent.Substring($endIndex + 1)
     [System.IO.File]::WriteAllText($scriptPath, $scriptContent, $utf8NoBom)
-    Write-Host "  [Deleted] stock entry '$EntryName'" -ForegroundColor Green
+    Write-Host "  [Replaced] entry '$EntryName'" -ForegroundColor Green
 }
 
-$deletedCount = 0
-foreach ($entryName in $EntryDeletions) {
-    Remove-CheckEntry -EntryName $entryName
-    $deletedCount++
+$replacedCount = 0
+foreach ($replacement in $EntryReplacements) {
+    Replace-CheckEntry -ConfFile $replacement.ConfFile -EntryName $replacement.EntryName
+    $replacedCount++
 }
-if ($deletedCount -eq 0) {
-    Write-Host "  [None] No entry targets listed - nothing to delete." -ForegroundColor Yellow
+if ($replacedCount -eq 0) {
+    Write-Host "  [None] No entry targets listed - nothing to replace." -ForegroundColor Yellow
 }
 
 # ============================================================================
-# STEP 4: Append Functions & Entry Targets to doommake.script
+# STEP 4: Insert Functions & Entry Targets into doommake.script
 # ============================================================================
-# All tweak blocks are appended to the END of the file in listed order.
-# Each conf file's FIRST LINE is a unique marker comment used only for
-# duplicate detection - it is stripped before appending. Banners (START OF
-# TWEAK, MODIFIED STOCK TARGETS, END OF TWEAK) live inside the conf files
-# themselves, so nothing is hardcoded here. The modified make/release
-# entries are appended last, AFTER the tweak functions they call -
-# RookScript requires functions to be defined before their call sites.
+# Custom blocks are inserted immediately before the FIRST "check entry" found
+# in the file, rather than appended to the very end. This keeps them below
+# every stock function (so our code can call stock functions) and above
+# every stock entry (so stock entries like "release" can call our custom
+# functions too). Multiple blocks are inserted in order at the same growing
+# point, so later files (e.g. _final.conf) still land after earlier ones
+# (e.g. _all.conf).
 
 Write-Host ""
-Write-Host "STEP 4: Appending new functions and entry targets..." -ForegroundColor Cyan
+Write-Host "STEP 4: Inserting new functions and entry targets..." -ForegroundColor Cyan
 
 $scriptContent = Get-Content $scriptPath -Raw
-$appendedCount = 0
 
-foreach ($block in $AppendBlocks) {
+$firstEntryMatch = [regex]::Match($scriptContent, 'check\s+entry\s+\w+\(args\)\s*\{')
 
-    $confPath = Join-Path $PSScriptRoot $block
+if (-not $firstEntryMatch.Success) {
+    Write-Host "  [ERROR] Could not find any 'check entry' in doommake.script - cannot determine insertion point." -ForegroundColor Red
+} else {
+    $insertIndex = $firstEntryMatch.Index
+    $insertedCount = 0
 
-    if (!(Test-Path $confPath)) {
-        Write-Host "  [WARNING] Config file not found: $block" -ForegroundColor Red
-        continue
+    foreach ($block in $AppendBlocks) {
+
+        $confPath = Join-Path $PSScriptRoot $block
+
+        if (!(Test-Path $confPath)) {
+            Write-Host "  [WARNING] Config file not found: $block" -ForegroundColor Red
+            continue
+        }
+
+        $newBlock = (Get-Content $confPath -Raw).TrimEnd()
+        $markerLine = ($newBlock -split "`r?`n")[0].Trim()
+
+        if ($scriptContent.Contains($markerLine)) {
+            Write-Host "  [Skipped] '$block' already inserted (marker found)" -ForegroundColor Yellow
+            continue
+        }
+
+        $insertText = $newBlock + "`r`n`r`n"
+        $scriptContent = $scriptContent.Substring(0, $insertIndex) + $insertText + $scriptContent.Substring($insertIndex)
+        $insertIndex += $insertText.Length
+
+        Write-Host "  [Inserted] $block" -ForegroundColor Green
+        $insertedCount++
     }
 
-    $lines      = (Get-Content $confPath -Raw) -split "`r?`n"
-    $markerLine = $lines[0].Trim()
+    [System.IO.File]::WriteAllText($scriptPath, $scriptContent, $utf8NoBom)
 
-    # Duplicate detection: if the marker line is already in the script, skip.
-    if ($scriptContent.Contains($markerLine)) {
-        Write-Host "  [Skipped] '$block' already appended (marker found)" -ForegroundColor Yellow
-        continue
+    if ($insertedCount -eq 0) {
+        Write-Host "  [None] No blocks listed - nothing to insert." -ForegroundColor Yellow
     }
-
-    # Strip line 0 (the marker), join the rest, trim trailing whitespace.
-    $blockContent = ($lines[1..($lines.Length - 1)] -join "`r`n").TrimEnd()
-
-    $scriptContent = $scriptContent.TrimEnd() + "`r`n`r`n" + $blockContent + "`r`n"
-
-    Write-Host "  [Appended] $block" -ForegroundColor Green
-    $appendedCount++
-}
-
-[System.IO.File]::WriteAllText($scriptPath, $scriptContent, $utf8NoBom)
-
-if ($appendedCount -eq 0) {
-    Write-Host "  [None] Nothing new appended." -ForegroundColor Yellow
 }
 
 # ============================================================================

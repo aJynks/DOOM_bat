@@ -616,7 +616,8 @@ function Show-TargetsHelp {
     Write-Host "  doommake complete          - Runs release, editorrelease, texturesrelease, playpal, deco (no zip)" -ForegroundColor Yellow
     Write-Host "  doommake deco              - Compile DECOHack and build a DEHACKED-only WAD" -ForegroundColor Yellow
     Write-Host "  doommake editorrelease     - Same as release, but ALL textures + only MAP99 (if present)" -ForegroundColor Yellow
-    Write-Host "  doommake final             - Same as complete, but also creates the dist zip" -ForegroundColor Yellow
+    Write-Host "  doommake editorreleasenotexturex - Same as editorrelease, but with no TEXTURE1/2, PNAMES, ANIMATED, SWITCHES" -ForegroundColor Yellow
+	Write-Host "  doommake final             - Same as complete, but also creates the dist zip" -ForegroundColor Yellow
     Write-Host "  doommake fresh             - Clean build dir, then full build and create release WAD" -ForegroundColor Yellow
     Write-Host "  doommake playpal           - Convert palettes and colormaps into a palette-only WAD" -ForegroundColor Yellow
     Write-Host "  doommake texturesrelease   - Standard texture WAD, plus wadinfo/credits and palette data" -ForegroundColor Yellow
