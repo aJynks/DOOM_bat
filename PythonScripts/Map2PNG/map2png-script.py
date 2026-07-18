@@ -1,60 +1,131 @@
 #!/usr/bin/env python3
 """
-Draw Doom maps to transparent PNGs with automap-ish line colours.
+map2png - draw Doom maps to PNGs with automap-style line colours.
 
-Usage:
-  drawmaps source.wad [options]
-
-Options:
-  -m, --map PATTERN       Map pattern (wildcards: * ?) or exact name
-                          Default: draws ALL maps in WAD
-  -s, --size WIDTH        Image width in pixels (default: 1024)
-  -t, --thickness N       Line thickness (default: 1)
-  -b, --background [COLOR] Background color: 'black' (default if flag used) 
-                          or hex code (#1ecbe1). Omit flag for transparent.
-                          Use: -b (black), -b #1ecbe1 (custom color)
-  --layers                Generate separate layer PNGs for each line type
-  -h, --help              Show this help message
-
-Outputs:
-  MAP09_map.png               (all lines)
-  MAP09_map_layer1.png        (Walls / one-sided only)   [if --layers]
-  MAP09_map_layer2.png        (Two-sided only)           [if --layers]
-  MAP09_map_layer3.png        (Secret only)              [if --layers]
-  MAP09_map_layer4.png        (Special/Action only)      [if --layers]
-
-Examples:
-  drawmaps doom2.wad
-  drawmaps doom2.wad -m MAP01
-  drawmaps doom2.wad -m "MAP*" -s 2048
-  drawmaps doom2.wad -m "E?M4" -t 2 -b
-  drawmaps doom2.wad -b #1ecbe1
-  drawmaps doom2.wad -b
-  drawmaps doom2.wad --layers
+Run "map2png --help" for full usage, options and examples.
 """
 
 import sys
 import os
 
+VERSION = "1.2"
+
+# ---------------------------------------------------------------------------
+# Colour support (stdlib only)
+# ---------------------------------------------------------------------------
+
+def _colour_enabled():
+    """ANSI only when writing to a real terminal and NO_COLOR isn't set."""
+    if os.environ.get("NO_COLOR"):
+        return False
+    if not sys.stdout.isatty():
+        return False
+    if os.name == "nt":
+        # Flips Win10+ consoles into virtual-terminal mode so ANSI renders.
+        os.system("")
+    return True
+
+
+class C:
+    """ANSI codes. All blanked out when colour is disabled."""
+    RESET = "\033[0m"
+    TITLE = "\033[1;96m"   # bold bright cyan
+    HEAD = "\033[1;93m"    # bold bright yellow
+    FLAG = "\033[92m"      # bright green
+    ARG = "\033[96m"       # bright cyan
+    DIM = "\033[90m"       # dim grey
+    WHITE = "\033[97m"     # bright white
+
+
+if not _colour_enabled():
+    for _n in ("RESET", "TITLE", "HEAD", "FLAG", "ARG", "DIM", "WHITE"):
+        setattr(C, _n, "")
+
+
+def show_help():
+    h = C.HEAD
+    f = C.FLAG
+    a = C.ARG
+    d = C.DIM
+    r = C.RESET
+
+    print()
+    print(f"{C.TITLE}========================================{r}")
+    print(f"{C.TITLE}  map2png {VERSION}  -  Doom map renderer{r}")
+    print(f"{C.TITLE}========================================{r}")
+    print()
+    print(f"{h}USAGE:{r}")
+    print(f"  {C.WHITE}map2png source.wad [options]{r}")
+    print()
+    print(f"{h}OPTIONS:{r}")
+    print(f"  {f}-m{r}, {f}--map{r} {a}PATTERN{r}         Map to draw. Wildcards {a}*{r} and {a}?{r} allowed.")
+    print(f"                            {d}Default: draws ALL maps in the WAD{r}")
+    print(f"  {f}-s{r}, {f}--size{r} {a}WIDTH{r}          Image width in pixels {d}(default: 1024){r}")
+    print(f"  {f}-t{r}, {f}--thickness{r} {a}N{r}         Line thickness {d}(default: 1){r}")
+    print(f"  {f}-b{r}, {f}--background{r} [{a}COLOR{r}]  Background fill. Bare {f}-b{r} gives black;")
+    print(f"                            pass {a}black{r} or a hex code like {a}#1ecbe1{r}.")
+    print(f"                            {d}Omit the flag entirely for transparent{r}")
+    print(f"  {f}--layers{r}                  Also write one PNG per line type")
+    print(f"  {f}-h{r}, {f}--help{r}                Show this help and exit")
+    print()
+    print(f"{h}OUTPUT:{r}")
+    print(f"  {a}<wad>-<MAP>.png{r}         All lines")
+    print(f"  {a}<wad>-<MAP>_layer1.png{r}  Walls / one-sided      {d}(red){r}      {d}[--layers]{r}")
+    print(f"  {a}<wad>-<MAP>_layer2.png{r}  Two-sided              {d}(tan){r}      {d}[--layers]{r}")
+    print(f"  {a}<wad>-<MAP>_layer3.png{r}  Secret                 {d}(yellow){r}   {d}[--layers]{r}")
+    print(f"  {a}<wad>-<MAP>_layer4.png{r}  Special / action       {d}(green){r}    {d}[--layers]{r}")
+    print()
+    print(f"  {d}<wad> is the source WAD filename with no path or extension,{r}")
+    print(f"  {d}so doom2.wad + MAP09 writes doom2-MAP09.png into the CWD.{r}")
+    print()
+    print(f"{h}NOTES:{r}")
+    print(f"  {d}- Background is fully transparent unless -b is given{r}")
+    print(f"  {d}- Map names match case-insensitively (map01 finds MAP01){r}")
+    print(f"  {d}- Height is derived from the map's aspect; -s sets width only{r}")
+    print(f"  {d}- Secret and special flags win over the one/two-sided colours{r}")
+    print(f"  {d}- Requires: omgifol, Pillow{r}")
+    print()
+    print(f"{h}EXAMPLES:{r}")
+    print(f"  {C.WHITE}map2png doom2.wad{r}")
+    print(f"    {d}Draw every map in the WAD at the default 1024px{r}")
+    print(f"  {C.WHITE}map2png doom2.wad -m MAP01{r}")
+    print(f"    {d}Draw a single named map{r}")
+    print(f"  {C.WHITE}map2png doom2.wad -m \"MAP*\" -s 2048{r}")
+    print(f"    {d}Wildcard match, rendered at 2048px wide{r}")
+    print(f"  {C.WHITE}map2png doom.wad -m \"E?M4\" -t 2 -b{r}")
+    print(f"    {d}All fourth maps, 2px lines, on a black background{r}")
+    print(f"  {C.WHITE}map2png mywad.wad -b #1ecbe1{r}")
+    print(f"    {d}Custom hex background colour{r}")
+    print(f"  {C.WHITE}map2png mywad.wad -m MAP09 --layers{r}")
+    print(f"    {d}Combined PNG plus the four per-line-type layer PNGs{r}")
+    print(f"  {C.WHITE}map2png mywad.wad --layers -s 4096 -t 3{r}")
+    print(f"    {d}Big layered export for compositing in an image editor{r}")
+    print()
+
+
 # --- Dependency check ---
 # Maps the import name to the pip package name (they differ for omgifol).
+# Skipped for --help so the usage screen works on a bare install.
 _REQUIRED = {
     "omg": "omgifol",
     "PIL": "Pillow",
 }
-_missing = []
-for _import_name, _pip_name in _REQUIRED.items():
-    try:
-        __import__(_import_name)
-    except ImportError:
-        _missing.append(_pip_name)
-if _missing:
-    print("Error: missing required dependencies: " + ", ".join(_missing))
-    print("Install with:  pip install " + " ".join(_missing))
-    raise SystemExit(1)
+_HELP_ONLY = ("-h" in sys.argv or "--help" in sys.argv) or len(sys.argv) < 2
 
-from omg import WAD, MapEditor
-from PIL import Image, ImageDraw
+if not _HELP_ONLY:
+    _missing = []
+    for _import_name, _pip_name in _REQUIRED.items():
+        try:
+            __import__(_import_name)
+        except ImportError:
+            _missing.append(_pip_name)
+    if _missing:
+        print("Error: missing required dependencies: " + ", ".join(_missing))
+        print("Install with:  pip install " + " ".join(_missing))
+        raise SystemExit(1)
+
+    from omg import WAD, MapEditor
+    from PIL import Image, ImageDraw
 
 # --- Linedef flag bits (classic Doom/Boom compatible) ---
 ML_SECRET = 0x0020  # "secret" line shows differently on automap in many ports
@@ -230,10 +301,6 @@ def drawmap(wad, name, width, wad_basename, save_layers=False, thickness=1, bg_c
     if save_layers:
         for i in range(1, 5):
             layer_imgs[i].save(f"{wad_basename}-{name}_layer{i}.png", "PNG")
-
-
-def show_help():
-    print(__doc__)
 
 
 def main(argv):
