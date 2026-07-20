@@ -13,7 +13,7 @@ Modes:
       (default: unique-textureX.txt).
       True duplicates (identical name+layout across inputs) and
       --filter matches are always written to a side file,
-      duplicates-<out>.txt, under their ORIGINAL names, for review.
+      <outputname>---duplicates.txt, under their ORIGINAL names, for review.
       --resolveDups additionally writes duplicates-resolved-<out>.txt:
       every true duplicate, renamed so each is unique (first occurrence
       always keeps its name; later ones get renamed). This does NOT
@@ -24,10 +24,22 @@ Modes:
       (name + layout) to a definition in the others or the filter
       (default output: <basestem>-subtracted.txt).
 
-  texx --findPatches texturex.txt --sourcedir DIR [-o DIR] (-fp)
-      Recursively scan a directory and COPY every file whose name matches
-      a patch referenced by the texture file into the output directory
-      (default: <inputstem>-patches). Existing files are overwritten.
+  texx --findPatches texturex.txt --sourcedir DIR ... [-o DIR] (-fp)
+      Recursively scan one or more directories and COPY every file whose
+      name matches a patch referenced by the texture file into the output
+      directory (default: <inputstem>-patches). With several --sourcedir
+      values the dirs are treated as one combined pool (first match wins).
+      Existing files are overwritten.
+
+      --excludeShared (needs 2+ --sourcedir values): instead of one pool,
+      the dirs are COMPARED. A patch present in EVERY dir with identical
+      file content is considered stock/shared and skipped entirely. All
+      other found patches are copied into per-dir subfolders of -o named
+      <sourcedir basename>-exclusive. If the same patch name exists in
+      several dirs with DIFFERENT content, the copy from the FIRST-listed
+      --sourcedir that has it wins (reported as a conflict). Use this to
+      build the minimal patch set a multi-IWAD texture resource must
+      bundle (e.g. -sd doom2_patches doom1_patches --excludeShared).
 
   texx --animation in1 in2 ... --default base-defswani.txt [-o out]  (-a)
       Merge SWANTBLS/defswani switch+animation definition files into
@@ -437,12 +449,12 @@ def do_merge(input_paths, filter_paths, out_path, resolve_dups):
     stem = os.path.splitext(os.path.basename(out_path))[0]
     base = stem[len("unique-"):] if stem.startswith("unique-") else stem
 
-    # duplicates-textureX.txt: every skipped duplicate + filter-removed
+    # <outputname>---duplicates.txt: every skipped duplicate + filter-removed
     # definition, kept under its ORIGINAL name, for manual review.
     dupfile_path = None
     dup_report_textures = [t for t, _ in dup_skipped] + [t for t, _ in filtered_skipped]
     if dup_report_textures:
-        dupfile_path = os.path.join(out_dir, f"duplicates-{base}.txt")
+        dupfile_path = os.path.join(out_dir, f"{stem}---duplicates.txt")
         dup_out = sorted(dup_report_textures, key=lambda t: t.name)
         write_deutex(dupfile_path, dup_out, "merge (duplicates)",
                      input_paths, filter_paths, enforce_null=False)
@@ -575,9 +587,21 @@ def do_remove(input_paths, filter_paths, out_dir):
         print()
 
 
-def do_find_patches(input_path, source_dir, out_dir):
-    if not os.path.isdir(source_dir):
-        die(f"source directory '{source_dir}' does not exist")
+def _files_identical(path_a, path_b):
+    """Byte-for-byte file content comparison (size check first)."""
+    try:
+        if os.path.getsize(path_a) != os.path.getsize(path_b):
+            return False
+        with open(path_a, "rb") as fa, open(path_b, "rb") as fb:
+            return fa.read() == fb.read()
+    except OSError as e:
+        die(f"cannot compare '{path_a}' vs '{path_b}': {e}")
+
+
+def do_find_patches(input_path, source_dirs, out_dir, exclude_shared):
+    for sd in source_dirs:
+        if not os.path.isdir(sd):
+            die(f"source directory '{sd}' does not exist")
     textures = load_deutex_only(input_path)
 
     # Each patch name is collected only once, however many textures use it.
@@ -588,29 +612,39 @@ def do_find_patches(input_path, source_dir, out_dir):
     if out_dir is None:
         stem = os.path.splitext(os.path.basename(input_path))[0]
         out_dir = f"{stem}-patches"
-    os.makedirs(out_dir, exist_ok=True)
     out_abs = os.path.abspath(out_dir)
 
+    if exclude_shared:
+        _find_patches_exclusive(wanted, source_dirs, out_dir, out_abs)
+    else:
+        _find_patches_pool(wanted, source_dirs, out_dir, out_abs)
+
+
+def _find_patches_pool(wanted, source_dirs, out_dir, out_abs):
+    """Classic mode: all source dirs form one combined pool, first match
+    wins. Identical to the original single-dir behavior when given one dir."""
     # Full recursive scan first (never descending into the output dir),
     # THEN copy — so freshly copied files are never re-scanned.
     matches = {}    # filename.lower() -> first full path found
     shadowed = []   # (shadowed path, winning path)
     found_stems = set()
-    for root, dirs, files in os.walk(source_dir):
-        dirs[:] = [d for d in dirs
-                   if os.path.abspath(os.path.join(root, d)) != out_abs]
-        for fname in sorted(files):
-            stem = os.path.splitext(fname)[0].upper()
-            if stem not in wanted:
-                continue
-            found_stems.add(stem)
-            key = fname.lower()
-            full = os.path.join(root, fname)
-            if key in matches:
-                shadowed.append((full, matches[key]))
-            else:
-                matches[key] = full
+    for source_dir in source_dirs:
+        for root, dirs, files in os.walk(source_dir):
+            dirs[:] = [d for d in dirs
+                       if os.path.abspath(os.path.join(root, d)) != out_abs]
+            for fname in sorted(files):
+                stem = os.path.splitext(fname)[0].upper()
+                if stem not in wanted:
+                    continue
+                found_stems.add(stem)
+                key = fname.lower()
+                full = os.path.join(root, fname)
+                if key in matches:
+                    shadowed.append((full, matches[key]))
+                else:
+                    matches[key] = full
 
+    os.makedirs(out_dir, exist_ok=True)
     copied = 0
     for full in sorted(matches.values()):
         try:
@@ -619,18 +653,134 @@ def do_find_patches(input_path, source_dir, out_dir):
         except OSError as e:
             die(f"cannot copy '{full}': {e}")
 
+    # Warnings first, results/summary last (so nothing important scrolls away).
     missing = sorted(wanted - found_stems)
-    print(f"Copied {copied} file(s) to '{out_dir}'")
     if shadowed:
         print(f"\nWARNING: {len(shadowed)} file(s) shadowed by an identical "
-              f"filename in another subdirectory (not copied):")
+              f"filename elsewhere in the source dir(s) (not copied):")
         for lost, winner in shadowed:
             print(f"  {lost}  (used: {winner})")
     if missing:
+        srcs = ", ".join(f"'{d}'" for d in source_dirs)
         print(f"\nWARNING: {len(missing)} referenced patch(es) had NO matching "
-              f"file in '{source_dir}':")
+              f"file in {srcs}:")
         for name in missing:
             print(f"  {name}")
+    print(f"\nCopied {copied} file(s) to '{out_dir}'")
+
+
+def _exclusive_subdir_names(source_dirs):
+    """One '<basename>-exclusive' subfolder name per source dir, deduped."""
+    names, used = [], set()
+    for sd in source_dirs:
+        base = os.path.basename(os.path.normpath(sd)) or "sourcedir"
+        name = f"{base}-exclusive"
+        n = 2
+        while name.lower() in used:
+            name = f"{base}-{n}-exclusive"
+            n += 1
+        used.add(name.lower())
+        names.append(name)
+    return names
+
+
+def _find_patches_exclusive(wanted, source_dirs, out_dir, out_abs):
+    """--excludeShared mode: compare the source dirs against each other.
+
+    * present + identical content in EVERY dir  -> skipped (stock/shared)
+    * everything else that was found            -> copied into the
+      '<dir basename>-exclusive' subfolder of the FIRST-listed dir that
+      has it; same-name-different-content cases are reported as conflicts.
+    """
+    # Scan each dir independently, keyed by patch stem (engine identity).
+    per_dir = []    # (source_dir, {STEM: full path}, [(shadowed, winner)])
+    for source_dir in source_dirs:
+        matches, shadowed = {}, []
+        for root, dirs, files in os.walk(source_dir):
+            dirs[:] = [d for d in dirs
+                       if os.path.abspath(os.path.join(root, d)) != out_abs]
+            for fname in sorted(files):
+                stem = os.path.splitext(fname)[0].upper()
+                if stem not in wanted:
+                    continue
+                full = os.path.join(root, fname)
+                if stem in matches:
+                    shadowed.append((full, matches[stem]))
+                else:
+                    matches[stem] = full
+        per_dir.append((source_dir, matches, shadowed))
+
+    all_found = set()
+    for _, matches, _ in per_dir:
+        all_found.update(matches)
+    missing = sorted(wanted - all_found)
+
+    # Classify every found patch.
+    to_copy = [[] for _ in source_dirs]   # per-dir-index list of stems
+    shared = []                            # identical in ALL dirs -> skipped
+    conflicts = []                         # (stem, winner idx, [loser idx])
+    for stem in sorted(all_found):
+        holders = [i for i, (_, m, _) in enumerate(per_dir) if stem in m]
+        first_path = per_dir[holders[0]][1][stem]
+        identical = all(_files_identical(first_path, per_dir[i][1][stem])
+                        for i in holders[1:])
+        if len(holders) == len(per_dir) and identical:
+            shared.append(stem)
+        else:
+            to_copy[holders[0]].append(stem)
+            if len(holders) > 1 and not identical:
+                conflicts.append((stem, holders[0], holders[1:]))
+
+    # Copy into per-dir '-exclusive' subfolders (created only when needed).
+    subnames = _exclusive_subdir_names(source_dirs)
+    results = []    # (source_dir, count, subdir path or None)
+    for idx, stems in enumerate(to_copy):
+        if not stems:
+            results.append((source_dirs[idx], 0, None))
+            continue
+        sub = os.path.join(out_dir, subnames[idx])
+        os.makedirs(sub, exist_ok=True)
+        count = 0
+        for stem in stems:
+            src = per_dir[idx][1][stem]
+            try:
+                shutil.copy2(src, os.path.join(sub, os.path.basename(src)))
+                count += 1
+            except OSError as e:
+                die(f"cannot copy '{src}': {e}")
+        results.append((source_dirs[idx], count, sub))
+
+    # Warnings first, results/summary last (so nothing important scrolls away).
+    for source_dir, _, shadowed in per_dir:
+        if shadowed:
+            print(f"\nWARNING: {len(shadowed)} file(s) in '{source_dir}' "
+                  f"shadowed by the same patch name elsewhere in that dir "
+                  f"(not used):")
+            for lost, winner in shadowed:
+                print(f"  {lost}  (used: {winner})")
+    if missing:
+        srcs = ", ".join(f"'{d}'" for d in source_dirs)
+        print(f"\nWARNING: {len(missing)} referenced patch(es) had NO matching "
+              f"file in any of {srcs}:")
+        for name in missing:
+            print(f"  {name}")
+    if conflicts:
+        print(f"\nNOTE: {len(conflicts)} patch name(s) exist in several source "
+              f"dirs with DIFFERENT content; kept the copy from the "
+              f"first-listed dir that has each:")
+        for stem, winner, losers in conflicts:
+            lost = ", ".join(f"'{source_dirs[i]}'" for i in losers)
+            print(f"  {stem}: kept '{source_dirs[winner]}'  (dropped: {lost})")
+
+    print(f"\n{len(shared)} patch(es) present and identical in all "
+          f"{len(source_dirs)} source dir(s) -- skipped (stock/shared)")
+    for source_dir, count, sub in results:
+        if sub is not None:
+            print(f"Copied {count} exclusive file(s) from '{source_dir}' "
+                  f"to '{sub}'")
+        else:
+            print(f"Copied 0 exclusive file(s) from '{source_dir}' "
+                  f"(nothing exclusive)")
 
 
 # ================================================================ defswani (SWANTBLS) text
@@ -1026,7 +1176,7 @@ def print_custom_help():
          "into a single set for a megaproject. Output is sorted",
          "alphabetically by texture name; patch layout/order within each",
          "texture is untouched. True duplicates and --filter matches are",
-         "written out to a duplicates-<out>.txt side file for review."],
+         "written out to a <outputname>---duplicates.txt side file for review."],
         [
             ("-m, --merge IN [IN...]", "files to merge", False),
             ("-f, --filter IN [IN...]", "drop anything matching these (e.g. doom2.txt)", False),
@@ -1062,12 +1212,21 @@ def print_custom_help():
 
     out.append(_help_section(
         pal, "FIND PATCHES   (-fp, --findPatches)",
-        ["Scan a directory tree and copy out every patch graphic referenced",
+        ["Scan directory trees and copy out every patch graphic referenced",
          "by a texturex.txt. Use this to collect just the patches a texture",
-         "set actually needs out of a much bigger resource folder."],
+         "set actually needs out of a much bigger resource folder. Several",
+         "--sourcedir dirs act as one combined pool (first match wins).",
+         "",
+         "With --excludeShared the dirs are COMPARED instead: patches",
+         "present with identical content in ALL dirs are stock and get",
+         "skipped; everything else is copied into '<dirname>-exclusive'",
+         "subfolders of -o. Same name + different content: the FIRST-listed",
+         "dir that has it wins. Use this to find the minimal patch set a",
+         "multi-IWAD texture resource must bundle."],
         [
             ("-fp, --findPatches TEXTUREX", "texture file to read patch names from", False),
-            ("-sd, --sourcedir DIR", "directory to scan recursively", True),
+            ("-sd, --sourcedir DIR [DIR...]", "director(ies) to scan recursively", True),
+            ("--excludeShared", "compare dirs, keep only non-shared patches", False),
             ("-o, --output DIR", "default: <input>-patches", False),
         ]))
 
@@ -1099,7 +1258,7 @@ def print_custom_help():
     out.append(f"  {pal.dim}Every output enforces {pal.reset}{pal.flag}AASTINKY{pal.reset}{pal.dim} (the null texture,{pal.reset}")
     out.append(f"  {pal.dim}index 0) as the first entry -- moved to the front if present,{pal.reset}")
     out.append(f"  {pal.dim}or synthesized and inserted if missing entirely. (Not applied{pal.reset}")
-    out.append(f"  {pal.dim}to --merge's duplicates-*.txt diagnostic side files.){pal.reset}")
+    out.append(f"  {pal.dim}to --merge's duplicates diagnostic side files.){pal.reset}")
     out.append("")
 
     out.append(f"{pal.head}EXAMPLES{pal.reset}")
@@ -1110,6 +1269,8 @@ def print_custom_help():
     out.append("  texx -s mytex.txt other.wad -f doom2.wad")
     out.append("  texx -rm texture01.txt texture02.txt -f doom2-textures.txt")
     out.append("  texx -fp texturex.txt -sd \"C:/patches\" -o picked")
+    out.append("  texx -fp merged.txt -sd doom2_patches doom1_patches "
+               "--excludeShared -o exclusive")
     out.append("  texx -a 32in24-defswani.txt jimmytex-defswani.txt "
                 "--default doom2-defswani.txt")
     out.append("")
@@ -1158,9 +1319,18 @@ def main():
                         help="definitions to exclude from --merge/--subtract/"
                              "--remove output (identical name+layout matches "
                              "are dropped)")
-    parser.add_argument("-sd", "--sourcedir", metavar="DIR",
-                        help="directory to scan recursively for patch files "
-                             "(--findPatches only)")
+    parser.add_argument("-sd", "--sourcedir", metavar="DIR", nargs="+",
+                        help="director(ies) to scan recursively for patch "
+                             "files (--findPatches only); several dirs act "
+                             "as one combined pool unless --excludeShared "
+                             "is given")
+    parser.add_argument("--excludeShared", "--excludeshared",
+                        dest="excludeShared", action="store_true",
+                        help="--findPatches only, needs 2+ --sourcedir dirs: "
+                             "skip patches present with identical content in "
+                             "ALL dirs; copy the rest into per-dir "
+                             "'<dirname>-exclusive' subfolders of -o "
+                             "(first-listed dir wins content conflicts)")
     parser.add_argument("--default", metavar="DEFAULT",
                         help="base defswani.txt that is reproduced 100%% unchanged "
                              "(--animation only, required)")
@@ -1180,6 +1350,11 @@ def main():
         die("--default only applies to --animation")
     if args.resolveDups and not args.merge:
         die("--resolveDups only applies to --merge")
+    if args.excludeShared and not args.findPatches:
+        die("--excludeShared only applies to --findPatches")
+    if args.excludeShared and (not args.sourcedir or len(args.sourcedir) < 2):
+        die("--excludeShared needs at least two --sourcedir directories "
+            "to compare")
 
     if args.convert:
         do_convert(args.convert, args.output or "texturex.txt")
@@ -1194,7 +1369,8 @@ def main():
     elif args.findPatches:
         if not args.sourcedir:
             die("--findPatches requires --sourcedir")
-        do_find_patches(args.findPatches, args.sourcedir, args.output)
+        do_find_patches(args.findPatches, args.sourcedir, args.output,
+                        args.excludeShared)
     elif args.animation:
         if not args.default:
             die("--animation requires --default")
