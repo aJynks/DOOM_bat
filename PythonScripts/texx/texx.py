@@ -6,7 +6,7 @@ Modes:
   texx --convert input [-o out.txt]                        (-c)
       Convert texture definitions to a DoomTools/DEUTEX-style text file.
 
-  texx --merge in1 in2 ... [--filter f ...] [--resolveDups] [-o out]  (-m)
+  texx --merge in1 in2 ... [--filter f ...] [--overwrite] [--resolveDups] [-o out]  (-m)
       Merge all inputs into one file of unique texture definitions,
       written out sorted alphabetically by texture name (patch layout
       and order within each texture is untouched)
@@ -14,6 +14,17 @@ Modes:
       True duplicates (identical name+layout across inputs) and
       --filter matches are always written to a side file,
       <outputname>---duplicates.txt, under their ORIGINAL names, for review.
+      --overwrite changes how same-name/DIFFERENT-layout collisions are
+      handled: instead of renaming the later definition, the FIRST-listed
+      input's version wins and the later one is dropped, so exactly one
+      texture per name ends up in the output (input order = priority
+      order). Dropped definitions are saved to
+      <outputname>---overwritten.txt for review.
+      --outputRenamed additionally writes <output>_renamedTextures.txt:
+      a valid DEUTEX definition file grouping every name-collision set
+      together -- the KEPT original followed by each losing definition
+      under a unique name, each tagged with a source comment. Feed it to
+      'texx render' to compare the conflicting versions visually.
       --resolveDups additionally writes duplicates-resolved-<out>.txt:
       every true duplicate, renamed so each is unique (first occurrence
       always keeps its name; later ones get renamed). This does NOT
@@ -57,6 +68,18 @@ Modes:
       input INDEPENDENTLY -- no merging, no cross-file dedup, no
       renaming. Each input is saved as its own file named
       removed-<original filename> in -o DIR (default: current directory).
+
+  texx render texturex.txt --patchdir DIR ... [-o DIR]     (-rd, --render)
+      Composite every texture definition into a "flattened" true-colour
+      RGBA PNG named <TEXNAME>.png, pasting each referenced patch image
+      (from the --patchdir dir(s), recursive, first-listed dir wins) at
+      its x/y offset onto a transparent canvas, clipped to the texture's
+      dimensions like the engine does (default out dir: <input>-renders).
+      Patch dirs are expected to hold true-colour PNGs (e.g. DoomTools
+      explode output) -- no palette handling is done. Null textures
+      (AASTINKY/AASHITTY) are skipped; textures with missing patch
+      images are skipped and reported. Needs Pillow (pip install Pillow);
+      all other modes stay dependency-free.
 
 Null texture:
   Every texx-written output enforces AASTINKY (index 0 in TEXTURE1/2) as
@@ -352,7 +375,10 @@ def make_unique_name(name, taken):
 
 # ================================================================ output
 
-def write_deutex(path, textures, mode, inputs, filters, enforce_null=True):
+def write_deutex(path, textures, mode, inputs, filters, enforce_null=True,
+                 comments=None):
+    """comments: optional {texture name: comment string} -- emitted as a
+    '; comment' line directly above that texture's definition."""
     if enforce_null:
         null_tex = None
         rest = []
@@ -377,6 +403,8 @@ def write_deutex(path, textures, mode, inputs, filters, enforce_null=True):
         lines.append(f"; Filter: {', '.join(os.path.basename(p) for p in filters)}")
     lines.append("")
     for t in textures:
+        if comments and t.name in comments:
+            lines.append(f"; {comments[t.name]}")
         lines.append(f"{t.name} {t.width} {t.height}")
         for pname, x, y in t.patches:
             lines.append(f"*\t{pname} {x} {y}")
@@ -390,27 +418,85 @@ def write_deutex(path, textures, mode, inputs, filters, enforce_null=True):
 
 # ================================================================ modes
 
+SUMMARY_WIDTH = 64
+
+
+def summary_file_list(label, paths, counts=None, note="", unit="file"):
+    """Numbered, aligned listing of input files for a summary block.
+
+    counts: optional list of per-file definition counts (same order as
+    paths). note: appended to the header line, e.g. priority-order hints.
+    """
+    if not paths:
+        return []
+    header = f"  {label + ':':<24}{len(paths)} {unit}(s)"
+    if note:
+        header += f"  {note}"
+    lines = [header]
+    width = len(str(len(paths)))
+    for i, p in enumerate(paths, 1):
+        if counts is not None:
+            lines.append(f"    {i:>{width}}. {p}  ({counts[i - 1]} defs)")
+        else:
+            lines.append(f"    {i:>{width}}. {p}")
+    return lines
+
+
+def print_summary(title, lines, wrote=(), warn=()):
+    """Print the final, always-last summary block for a mode.
+
+    Everything actionable lands here so it sits directly above the prompt:
+    counts, then any warning tallies (pointing back up at the detail
+    listings), then the files written.
+    """
+    print()
+    print("=" * SUMMARY_WIDTH)
+    print(f"SUMMARY -- {title}")
+    print("=" * SUMMARY_WIDTH)
+    for line in lines:
+        print(line)
+    warn = [w for w in warn if w]
+    if warn:
+        print("-" * SUMMARY_WIDTH)
+        for line in warn:
+            print(f"  !! {line}")
+    wrote = [w for w in wrote if w]
+    if wrote:
+        print("-" * SUMMARY_WIDTH)
+        for path in wrote:
+            print(f"  Wrote: {path}")
+    print("=" * SUMMARY_WIDTH)
+
+
 def do_convert(input_path, out_path):
     textures = load_input(input_path)
     write_deutex(out_path, textures, "convert", [input_path], [])
-    print(f"Converted {len(textures)} texture definition(s) from '{input_path}'.")
-    print(f"Wrote: {out_path}")
+    print_summary(
+        "CONVERT",
+        [f"  Source:               '{input_path}'",
+         f"  Definitions written:  {len(textures)}"],
+        wrote=[out_path])
 
 
-def do_merge(input_paths, filter_paths, out_path, resolve_dups):
+def do_merge(input_paths, filter_paths, out_path, resolve_dups, overwrite=False,
+             output_renamed=False):
     # Filter set: name -> {layout: source filter file}
     filter_defs = {}
+    filter_counts = []
     for fp in filter_paths:
         batch = load_input(fp)
         print(f"Read {len(batch):>5} definition(s) from filter '{fp}'")
+        filter_counts.append(len(batch))
         for t in batch:
             filter_defs.setdefault(t.name, {}).setdefault(t.layout(), fp)
 
     # Gather all merge textures in command-line order
     all_textures = []
+    input_counts = []
     for ip in input_paths:
         batch = load_input(ip)
         print(f"Read {len(batch):>5} definition(s) from '{ip}'")
+        input_counts.append(len(batch))
         all_textures += batch
 
     # Reserve every original input name so renames never collide with
@@ -422,6 +508,7 @@ def do_merge(input_paths, filter_paths, out_path, resolve_dups):
     renamed = []             # (old_name, new_name, source) -- diff-layout collisions
     dup_skipped = []         # (texture, kept_source) -- identical dupes, dropped
     filtered_skipped = []    # (texture, filter_source) -- removed by --filter
+    overwritten = []         # (texture, winning_source) -- dropped by --overwrite
 
     for t in all_textures:
         fdefs = filter_defs.get(t.name)
@@ -432,7 +519,12 @@ def do_merge(input_paths, filter_paths, out_path, resolve_dups):
         if t.layout() in seen:
             dup_skipped.append((t, seen[t.layout()]))
             continue
-        if seen:  # same name, different layout -> rename this one
+        if seen:  # same name, different layout
+            if overwrite:
+                # First-listed input wins: drop this later definition
+                # entirely instead of renaming it into the output.
+                overwritten.append((t, next(iter(seen.values()))))
+                continue
             new_name = make_unique_name(t.name, taken)
             taken.add(new_name)
             renamed.append((t.name, new_name, t.source))
@@ -459,6 +551,65 @@ def do_merge(input_paths, filter_paths, out_path, resolve_dups):
         write_deutex(dupfile_path, dup_out, "merge (duplicates)",
                      input_paths, filter_paths, enforce_null=False)
 
+    # <outputname>---overwritten.txt: definitions dropped by --overwrite
+    # (same name, different layout, lost to an earlier-listed input).
+    overwritten_path = None
+    if overwritten:
+        overwritten_path = os.path.join(out_dir, f"{stem}---overwritten.txt")
+        ow_out = sorted((t for t, _ in overwritten), key=lambda t: t.name)
+        write_deutex(overwritten_path, ow_out, "merge (overwritten)",
+                     input_paths, filter_paths, enforce_null=False)
+
+    # <outputname>_renamedTextures.txt (--outputRenamed): a proper DEUTEX
+    # definition file holding every name-collision set together -- the KEPT
+    # original followed by each losing definition under a unique name --
+    # ready to feed to 'texx render' for side-by-side visual comparison.
+    renamed_file_path = None
+    renamed_file_count = 0
+    if output_renamed:
+        by_name = {t.name: t for t in output}
+        render_out = []
+        render_comments = {}
+        if overwrite:
+            # Losers were dropped from the output; synthesize unique names
+            # here (file-local only) so they can coexist with the kept one.
+            groups = {}
+            for t, win_src in overwritten:
+                groups.setdefault(t.name, []).append(t)
+            for name in sorted(groups):
+                kept = by_name.get(name)
+                if kept is not None:
+                    render_out.append(kept)
+                    render_comments[kept.name] = f"KEPT -- from {kept.source}"
+                for t in groups[name]:
+                    new_name = make_unique_name(t.name, taken)
+                    taken.add(new_name)
+                    render_out.append(Texture(new_name, t.width, t.height,
+                                              t.patches, t.source))
+                    render_comments[new_name] = (f"dropped by --overwrite, was "
+                                                 f"'{t.name}' -- from {t.source}")
+        else:
+            groups = {}
+            for old, new, src in renamed:
+                groups.setdefault(old, []).append(new)
+            for old in sorted(groups):
+                kept = by_name.get(old)
+                if kept is not None:
+                    render_out.append(kept)
+                    render_comments[kept.name] = f"KEPT -- from {kept.source}"
+                for new in groups[old]:
+                    t = by_name[new]
+                    render_out.append(t)
+                    render_comments[new] = (f"renamed, was '{old}' -- "
+                                            f"from {t.source}")
+        if render_out:
+            renamed_file_path = os.path.join(out_dir,
+                                             f"{stem}_renamedTextures.txt")
+            write_deutex(renamed_file_path, render_out,
+                         "merge (renamed textures)", input_paths, filter_paths,
+                         enforce_null=False, comments=render_comments)
+            renamed_file_count = len(render_out)
+
     # duplicates-resolved-textureX.txt: only with --resolveDups, only the
     # true duplicates (not filter-removed), renamed so each is unique.
     resolved_path = None
@@ -475,12 +626,9 @@ def do_merge(input_paths, filter_paths, out_path, resolve_dups):
         write_deutex(resolved_path, resolved_out, "merge (duplicates resolved)",
                      input_paths, filter_paths, enforce_null=False)
 
+    # Detail listings: bulk/noise first, actionable renames last, so the
+    # least scrolling is needed to reach what matters.
     print()
-    if renamed:
-        print(f"Renamed {len(renamed)} same-name/different-layout texture(s):")
-        for old, new, src in renamed:
-            print(f"  {old:<8} -> {new:<8}  (from {src})")
-        print()
     if dup_skipped:
         print(f"Skipped {len(dup_skipped)} duplicate(s) "
               f"(identical to a definition already kept):")
@@ -500,16 +648,46 @@ def do_merge(input_paths, filter_paths, out_path, resolve_dups):
         for old, new, src, kept_src in resolved_renames:
             print(f"  {old:<8} -> {new:<8}  (from {src}, kept copy from {kept_src})")
         print()
+    if overwritten:
+        print(f"Overwritten: {len(overwritten)} same-name/different-layout "
+              f"definition(s) dropped in favour of an earlier input:")
+        for t, win_src in overwritten:
+            print(f"  {t.name:<8} (from {t.source})  -- kept the definition "
+                  f"from {win_src}")
+        print()
+    if renamed:
+        print(f"Renamed {len(renamed)} same-name/different-layout texture(s):")
+        for old, new, src in renamed:
+            print(f"  {old:<8} -> {new:<8}  (from {src})")
+        print()
 
-    print(f"{len(all_textures)} definitions in  ->  {len(output)} unique definitions out")
-    print(f"  duplicates skipped: {len(dup_skipped)}")
+    note = "(priority order: first wins)" if overwrite else "(priority order)"
+    lines = summary_file_list("Inputs", input_paths, input_counts, note)
+    lines += summary_file_list("Filters", filter_paths, filter_counts)
+    lines += [f"  {'Definitions in:':<24}{len(all_textures)}",
+              f"  {'Definitions out:':<24}{len(output)}",
+              f"  {'Duplicates skipped:':<24}{len(dup_skipped)}"]
     if filter_paths:
-        print(f"  removed by filter:  {len(filtered_skipped)}")
-    print(f"Wrote: {out_path}")
-    if dupfile_path:
-        print(f"Wrote: {dupfile_path}")
-    if resolved_path:
-        print(f"Wrote: {resolved_path}")
+        lines.append(f"  {'Removed by filter:':<24}{len(filtered_skipped)}")
+    if resolve_dups:
+        lines.append(f"  {'Resolved by rename:':<24}{len(resolved_renames)}")
+    if overwrite:
+        lines.append(f"  {'Overwritten (dropped):':<24}{len(overwritten)}")
+    else:
+        lines.append(f"  {'Renamed (collision):':<24}{len(renamed)}")
+    if output_renamed:
+        lines.append(f"  {'Render file entries:':<24}{renamed_file_count}")
+    warn = []
+    if renamed:
+        warn.append(f"{len(renamed)} texture(s) had the same name but a DIFFERENT "
+                    f"layout and were renamed -- see listing above")
+    if overwritten:
+        warn.append(f"{len(overwritten)} definition(s) DROPPED by --overwrite "
+                    f"(saved to {overwritten_path}) -- see listing above")
+    print_summary("MERGE", lines,
+                  wrote=[out_path, dupfile_path, overwritten_path,
+                         renamed_file_path, resolved_path],
+                  warn=warn)
 
 
 def load_deutex_only(path):
@@ -555,15 +733,22 @@ def do_subtract(input_paths, filter_paths, out_path):
         print(f"Removed {len(removed)} identical texture(s):")
         for t in removed:
             print(f"  {t.name}")
-    print(f"\n{len(base)} definitions in  ->  {len(kept)} definitions out")
-    print(f"Wrote: {out_path}")
+
+    lines = summary_file_list("Base", [base_path], [len(base)])
+    lines += summary_file_list("Subtracted", other_paths + filter_paths)
+    lines += [f"  {'Definitions in:':<24}{len(base)}",
+              f"  {'Removed:':<24}{len(removed)}",
+              f"  {'Definitions out:':<24}{len(kept)}"]
+    print_summary("SUBTRACT", lines, wrote=[out_path])
 
 
 def do_remove(input_paths, filter_paths, out_dir):
     filter_defs = {}
+    filter_counts = []
     for fp in filter_paths:
         batch = load_input(fp)
         print(f"Read {len(batch):>5} definition(s) from filter '{fp}'")
+        filter_counts.append(len(batch))
         for t in batch:
             filter_defs.setdefault(t.name, set()).add(t.layout())
 
@@ -571,6 +756,8 @@ def do_remove(input_paths, filter_paths, out_dir):
     os.makedirs(out_dir, exist_ok=True)
 
     print()
+    results = []
+    written = []
     for ip in input_paths:
         textures = load_input(ip)
         kept = [t for t in textures if t.layout() not in filter_defs.get(t.name, ())]
@@ -583,8 +770,18 @@ def do_remove(input_paths, filter_paths, out_dir):
               f"{len(kept)} written")
         for t in removed:
             print(f"  removed: {t.name}")
-        print(f"  Wrote: {out_path}")
         print()
+        results.append((ip, len(textures), len(removed), len(kept)))
+        written.append(out_path)
+
+    lines = summary_file_list("Filters", filter_paths, filter_counts)
+    lines.append(f"  {'Inputs:':<24}{len(results)} file(s)")
+    for ip, n_in, n_rm, n_kept in results:
+        lines.append(f"    {ip}: {n_in} in  ->  {n_rm} removed  ->  {n_kept} out")
+    lines.append(f"  {'Totals:':<24}{sum(r[1] for r in results)} in, "
+                 f"{sum(r[2] for r in results)} removed, "
+                 f"{sum(r[3] for r in results)} out")
+    print_summary("REMOVE", lines, wrote=written)
 
 
 def _files_identical(path_a, path_b):
@@ -598,6 +795,18 @@ def _files_identical(path_a, path_b):
         die(f"cannot compare '{path_a}' vs '{path_b}': {e}")
 
 
+def _print_missing_report(missing, refs, source_dirs):
+    """Missing-patch listing, printed LAST (right above the summary) so it
+    never scrolls away. Names the textures that reference each patch."""
+    srcs = ", ".join(f"'{d}'" for d in source_dirs)
+    print(f"\nWARNING: {len(missing)} referenced patch(es) had NO matching "
+          f"file in {srcs}:")
+    for name in missing:
+        users = refs.get(name, [])
+        shown = ", ".join(users[:6]) + (" ..." if len(users) > 6 else "")
+        print(f"  {name:<10} referenced by {len(users)} texture(s): {shown}")
+
+
 def do_find_patches(input_path, source_dirs, out_dir, exclude_shared):
     for sd in source_dirs:
         if not os.path.isdir(sd):
@@ -605,9 +814,18 @@ def do_find_patches(input_path, source_dirs, out_dir, exclude_shared):
     textures = load_deutex_only(input_path)
 
     # Each patch name is collected only once, however many textures use it.
-    wanted = {pname for t in textures for pname, _, _ in t.patches}
-    print(f"{len(textures)} texture definition(s) referencing "
-          f"{len(wanted)} unique patch name(s)")
+    # refs maps a patch name back to the texture(s) that use it, so a
+    # missing patch can be traced to the definition(s) that need it.
+    wanted = set()
+    refs = {}
+    for t in textures:
+        for pname, _, _ in t.patches:
+            wanted.add(pname)
+            users = refs.setdefault(pname, [])
+            if t.name not in users:
+                users.append(t.name)
+    print(f"{len(textures)} texture definition(s) from '{input_path}' "
+          f"referencing {len(wanted)} unique patch name(s)")
 
     if out_dir is None:
         stem = os.path.splitext(os.path.basename(input_path))[0]
@@ -615,12 +833,12 @@ def do_find_patches(input_path, source_dirs, out_dir, exclude_shared):
     out_abs = os.path.abspath(out_dir)
 
     if exclude_shared:
-        _find_patches_exclusive(wanted, source_dirs, out_dir, out_abs)
+        _find_patches_exclusive(wanted, refs, source_dirs, out_dir, out_abs)
     else:
-        _find_patches_pool(wanted, source_dirs, out_dir, out_abs)
+        _find_patches_pool(wanted, refs, source_dirs, out_dir, out_abs)
 
 
-def _find_patches_pool(wanted, source_dirs, out_dir, out_abs):
+def _find_patches_pool(wanted, refs, source_dirs, out_dir, out_abs):
     """Classic mode: all source dirs form one combined pool, first match
     wins. Identical to the original single-dir behavior when given one dir."""
     # Full recursive scan first (never descending into the output dir),
@@ -653,7 +871,8 @@ def _find_patches_pool(wanted, source_dirs, out_dir, out_abs):
         except OSError as e:
             die(f"cannot copy '{full}': {e}")
 
-    # Warnings first, results/summary last (so nothing important scrolls away).
+    # Detail listings first, MISSING last (right above the summary) since
+    # it's the block that most often needs acting on.
     missing = sorted(wanted - found_stems)
     if shadowed:
         print(f"\nWARNING: {len(shadowed)} file(s) shadowed by an identical "
@@ -661,12 +880,21 @@ def _find_patches_pool(wanted, source_dirs, out_dir, out_abs):
         for lost, winner in shadowed:
             print(f"  {lost}  (used: {winner})")
     if missing:
-        srcs = ", ".join(f"'{d}'" for d in source_dirs)
-        print(f"\nWARNING: {len(missing)} referenced patch(es) had NO matching "
-              f"file in {srcs}:")
-        for name in missing:
-            print(f"  {name}")
-    print(f"\nCopied {copied} file(s) to '{out_dir}'")
+        _print_missing_report(missing, refs, source_dirs)
+
+    warn = []
+    if missing:
+        warn.append(f"{len(missing)} referenced patch(es) NOT FOUND in any "
+                    f"source dir -- see listing above")
+    if shadowed:
+        warn.append(f"{len(shadowed)} file(s) shadowed by a duplicate filename "
+                    f"-- see listing above")
+    lines = summary_file_list("Source dir(s)", source_dirs, unit="dir")
+    lines += [f"  {'Patch names wanted:':<24}{len(wanted)}",
+              f"  {'Found:':<24}{len(found_stems)}",
+              f"  {'Not found:':<24}{len(missing)}",
+              f"  {'Copied:':<24}{copied} -> '{out_dir}'"]
+    print_summary("FIND PATCHES", lines, warn=warn)
 
 
 def _exclusive_subdir_names(source_dirs):
@@ -684,7 +912,7 @@ def _exclusive_subdir_names(source_dirs):
     return names
 
 
-def _find_patches_exclusive(wanted, source_dirs, out_dir, out_abs):
+def _find_patches_exclusive(wanted, refs, source_dirs, out_dir, out_abs):
     """--excludeShared mode: compare the source dirs against each other.
 
     * present + identical content in EVERY dir  -> skipped (stock/shared)
@@ -750,7 +978,8 @@ def _find_patches_exclusive(wanted, source_dirs, out_dir, out_abs):
                 die(f"cannot copy '{src}': {e}")
         results.append((source_dirs[idx], count, sub))
 
-    # Warnings first, results/summary last (so nothing important scrolls away).
+    # Detail listings first, MISSING last (right above the summary) since
+    # it's the block that most often needs acting on.
     for source_dir, _, shadowed in per_dir:
         if shadowed:
             print(f"\nWARNING: {len(shadowed)} file(s) in '{source_dir}' "
@@ -758,12 +987,6 @@ def _find_patches_exclusive(wanted, source_dirs, out_dir, out_abs):
                   f"(not used):")
             for lost, winner in shadowed:
                 print(f"  {lost}  (used: {winner})")
-    if missing:
-        srcs = ", ".join(f"'{d}'" for d in source_dirs)
-        print(f"\nWARNING: {len(missing)} referenced patch(es) had NO matching "
-              f"file in any of {srcs}:")
-        for name in missing:
-            print(f"  {name}")
     if conflicts:
         print(f"\nNOTE: {len(conflicts)} patch name(s) exist in several source "
               f"dirs with DIFFERENT content; kept the copy from the "
@@ -771,16 +994,32 @@ def _find_patches_exclusive(wanted, source_dirs, out_dir, out_abs):
         for stem, winner, losers in conflicts:
             lost = ", ".join(f"'{source_dirs[i]}'" for i in losers)
             print(f"  {stem}: kept '{source_dirs[winner]}'  (dropped: {lost})")
+    if missing:
+        _print_missing_report(missing, refs, source_dirs)
 
-    print(f"\n{len(shared)} patch(es) present and identical in all "
-          f"{len(source_dirs)} source dir(s) -- skipped (stock/shared)")
+    lines = summary_file_list("Source dir(s)", source_dirs,
+                              note="(priority order: first wins)", unit="dir")
+    lines += [f"  {'Patch names wanted:':<24}{len(wanted)}",
+              f"  {'Found:':<24}{len(all_found)}",
+              f"  {'Not found:':<24}{len(missing)}",
+              f"  {'Shared (skipped):':<24}{len(shared)}",
+              f"  {'Content conflicts:':<24}{len(conflicts)}",
+              f"  {'TOTAL to bundle:':<24}{sum(r[1] for r in results)}"]
     for source_dir, count, sub in results:
-        if sub is not None:
-            print(f"Copied {count} exclusive file(s) from '{source_dir}' "
-                  f"to '{sub}'")
-        else:
-            print(f"Copied 0 exclusive file(s) from '{source_dir}' "
-                  f"(nothing exclusive)")
+        where = f" -> '{sub}'" if sub is not None else " (nothing exclusive)"
+        lines.append(f"    from '{source_dir}': {count}{where}")
+    warn = []
+    if missing:
+        warn.append(f"{len(missing)} referenced patch(es) NOT FOUND in any "
+                    f"source dir -- see listing above")
+    if conflicts:
+        warn.append(f"{len(conflicts)} patch name(s) differ between source dirs; "
+                    f"first-listed dir won -- see listing above")
+    any_shadowed = sum(len(s) for _, _, s in per_dir)
+    if any_shadowed:
+        warn.append(f"{any_shadowed} file(s) shadowed by a duplicate patch name "
+                    f"-- see listing above")
+    print_summary("FIND PATCHES (--excludeShared)", lines, warn=warn)
 
 
 # ================================================================ defswani (SWANTBLS) text
@@ -1037,6 +1276,106 @@ def _merge_section(default_entries, merge_entries_by_file):
     return output, added, duplicates, conflict_vs_default, conflict_among_merge
 
 
+RENDER_IMAGE_EXTS = {".png", ".bmp", ".tga", ".gif", ".jpg", ".jpeg"}
+RENDER_SKIP_NAMES = {"AASTINKY", "AASHITTY"}
+
+
+def do_render(input_path, patch_dirs, out_dir):
+    # Dependency check up front, with a single-line install command.
+    try:
+        from PIL import Image
+    except ImportError:
+        die("render mode needs Pillow -- install with:  pip install Pillow")
+
+    for pd in patch_dirs:
+        if not os.path.isdir(pd):
+            die(f"patch directory '{pd}' does not exist")
+    textures = load_input(input_path)
+    print(f"{len(textures)} texture definition(s) from '{input_path}'")
+
+    if out_dir is None:
+        stem = os.path.splitext(os.path.basename(input_path))[0]
+        out_dir = f"{stem}-renders"
+    os.makedirs(out_dir, exist_ok=True)
+    out_abs = os.path.abspath(out_dir)
+
+    # Index all patch dirs by filename stem; first-listed dir wins, then
+    # first file found within a dir (never descending into the output dir).
+    index = {}
+    for pd in patch_dirs:
+        for root, dirs, files in os.walk(pd):
+            dirs[:] = [d for d in dirs
+                       if os.path.abspath(os.path.join(root, d)) != out_abs]
+            for fname in sorted(files):
+                stem_u, ext = os.path.splitext(fname)
+                if ext.lower() not in RENDER_IMAGE_EXTS:
+                    continue
+                index.setdefault(stem_u.upper(), os.path.join(root, fname))
+    print(f"{len(index)} patch image(s) indexed across "
+          f"{len(patch_dirs)} dir(s)")
+
+    def paste_clipped(canvas, img, x, y):
+        W, H = canvas.size
+        w, h = img.size
+        sx0, sy0 = max(0, -x), max(0, -y)
+        sx1, sy1 = min(w, W - x), min(h, H - y)
+        if sx1 <= sx0 or sy1 <= sy0:
+            return  # entirely outside the canvas
+        canvas.alpha_composite(img.crop((sx0, sy0, sx1, sy1)),
+                               (x + sx0, y + sy0))
+
+    rendered = 0
+    skipped_null = 0
+    skipped_missing = []   # (tex name, [missing patch names])
+    failed = []            # (tex name, error)
+    for t in textures:
+        if t.name in RENDER_SKIP_NAMES:
+            skipped_null += 1
+            continue
+        missing = [p for p, _, _ in t.patches if p.upper() not in index]
+        if missing:
+            skipped_missing.append((t.name, list(dict.fromkeys(missing))))
+            continue
+        try:
+            canvas = Image.new("RGBA", (max(1, t.width), max(1, t.height)),
+                               (0, 0, 0, 0))
+            for pname, x, y in t.patches:
+                img = Image.open(index[pname.upper()]).convert("RGBA")
+                paste_clipped(canvas, img, x, y)
+            canvas.save(os.path.join(out_dir, f"{t.name.upper()}.png"))
+            rendered += 1
+        except OSError as e:
+            failed.append((t.name, str(e)))
+
+    # Detail listings first, MISSING last (right above the summary).
+    if failed:
+        print(f"\nWARNING: {len(failed)} texture(s) failed to render:")
+        for name, err in failed:
+            print(f"  {name}: {err}")
+    if skipped_missing:
+        print(f"\nWARNING: {len(skipped_missing)} texture(s) skipped -- "
+              f"referenced patch image(s) not found in any patch dir:")
+        for name, missing in skipped_missing:
+            print(f"  {name:<10} missing: {', '.join(missing)}")
+
+    lines = summary_file_list("Patch dir(s)", patch_dirs,
+                              note="(priority order: first wins)", unit="dir")
+    lines += [f"  {'Definitions in file:':<24}{len(textures)}",
+              f"  {'Rendered:':<24}{rendered} -> '{out_dir}'",
+              f"  {'Skipped (null tex):':<24}{skipped_null}",
+              f"  {'Skipped (missing):':<24}{len(skipped_missing)}"]
+    if failed:
+        lines.append(f"  {'Failed:':<24}{len(failed)}")
+    warn = []
+    if skipped_missing:
+        warn.append(f"{len(skipped_missing)} texture(s) NOT rendered -- patch "
+                    f"images missing, see listing above")
+    if failed:
+        warn.append(f"{len(failed)} texture(s) failed with errors -- see "
+                    f"listing above")
+    print_summary("RENDER", lines, warn=warn)
+
+
 def do_animation(merge_paths, default_path, out_path):
     default_data = parse_defswani(default_path)
     print(f"Read default '{default_path}': "
@@ -1075,23 +1414,28 @@ def do_animation(merge_paths, default_path, out_path):
             ("TEXTURES", cvd_tx, cam_tx),
         ])
 
-    print()
-    print(f"Switches:  {len(default_data['switches'])} default + {add_sw} added "
-          f"({dup_sw} duplicate(s) skipped) = {len(out_sw)}")
-    print(f"Flats:     {len(default_data['flats'])} default + {add_fl} added "
-          f"({dup_fl} duplicate(s) skipped) = {len(out_fl)}")
-    print(f"Textures:  {len(default_data['textures'])} default + {add_tx} added "
-          f"({dup_tx} duplicate(s) skipped) = {len(out_tx)}")
-
     if any_conflicts:
         print()
         _print_conflicts("SWITCHES", cvd_sw, cam_sw)
         _print_conflicts("FLATS", cvd_fl, cam_fl)
         _print_conflicts("TEXTURES", cvd_tx, cam_tx)
-        print(f"\nConflicts written to: {conflicts_path}  (review and copy back "
-              f"what you need)")
 
-    print(f"\nWrote: {out_path}")
+    n_conf = sum(len(x) for x in (cvd_sw, cam_sw, cvd_fl, cam_fl, cvd_tx, cam_tx))
+    warn = []
+    if any_conflicts:
+        warn.append(f"{n_conf} conflict(s) -- review {conflicts_path} and copy "
+                    f"back what you need")
+    lines = summary_file_list("Default", [default_path])
+    lines += summary_file_list("Merged in", merge_paths)
+    lines += [
+        f"  Switches:  {len(default_data['switches'])} default + {add_sw} added "
+        f"({dup_sw} dup(s) skipped) = {len(out_sw)}",
+        f"  Flats:     {len(default_data['flats'])} default + {add_fl} added "
+        f"({dup_fl} dup(s) skipped) = {len(out_fl)}",
+        f"  Textures:  {len(default_data['textures'])} default + {add_tx} added "
+        f"({dup_tx} dup(s) skipped) = {len(out_tx)}"]
+    print_summary("ANIMATION MERGE", lines,
+                  wrote=[out_path, conflicts_path], warn=warn)
 
 
 # ================================================================ colored --help
@@ -1176,13 +1520,23 @@ def print_custom_help():
          "into a single set for a megaproject. Output is sorted",
          "alphabetically by texture name; patch layout/order within each",
          "texture is untouched. True duplicates and --filter matches are",
-         "written out to a <outputname>---duplicates.txt side file for review."],
+         "written out to a <outputname>---duplicates.txt side file for review.",
+         "",
+         "By default a same-name/DIFFERENT-layout collision renames the later",
+         "definition. With --overwrite the first-listed input wins instead and",
+         "the later one is dropped, giving exactly one texture per name --",
+         "list your IWADs in priority order (e.g. doom2 first)."],
         [
-            ("-m, --merge IN [IN...]", "files to merge", False),
+            ("-m, --merge IN [IN...]", "files to merge (order = priority)", False),
             ("-f, --filter IN [IN...]", "drop anything matching these (e.g. doom2.txt)", False),
-            ("--resolveDups", "also write duplicates-resolved-<out>.txt with", False),
-            ("", "true duplicates renamed uniquely (doesn't touch the", False),
-            ("", "main output)", False),
+            ("--overwrite", "first-listed input wins name collisions;", False),
+            ("", "dropped defs saved to <out>---overwritten.txt", False),
+            ("--outputRenamed", "also write <out>_renamedTextures.txt with each", False),
+            ("", "collision set (kept + losers, uniquely named)", False),
+            ("", "ready for 'texx render'", False),
+            ("--resolveDups", "niche: also write duplicates-resolved-<out>.txt", False),
+            ("", "with true duplicates renamed uniquely (doesn't", False),
+            ("", "touch the main output)", False),
             ("-o, --output PATH", "default: unique-textureX.txt", False),
         ]))
 
@@ -1231,6 +1585,23 @@ def print_custom_help():
         ]))
 
     out.append(_help_section(
+        pal, "RENDER   (texx render / -rd, --render)",
+        ["Composite every texture definition into a flattened true-colour",
+         "PNG named <TEXNAME>.png -- each referenced patch image pasted at",
+         "its x/y offset onto a transparent canvas, clipped to the texture",
+         "size like the engine does. Patch dirs are expected to hold",
+         "true-colour PNGs (e.g. DoomTools explode output); no palette",
+         "handling. Pairs with --merge --outputRenamed to eyeball name",
+         "collisions side by side. Needs Pillow (pip install Pillow);",
+         "every other mode stays dependency-free."],
+        [
+            ("-rd, --render TEXTUREX", "definition file to render (or 'texx render F')", False),
+            ("-pd, --patchdir DIR [DIR...]", "patch image dir(s), recursive scan;", True),
+            ("", "first-listed dir wins duplicate names", False),
+            ("-o, --output DIR", "default: <input>-renders", False),
+        ]))
+
+    out.append(_help_section(
         pal, "ANIMATION MERGE   (-a, --animation, --animations)",
         ["Merge SWANTBLS/defswani switch + animation definition files",
          "([SWITCHES]/[FLATS]/[TEXTURES]) into one --default file that is",
@@ -1265,12 +1636,18 @@ def print_custom_help():
     out.append("  texx -c mywad.wad")
     out.append("  texx -c slade-export.txt -o texture1.txt")
     out.append("  texx -m resource.wad map01.wad -f doom2.wad")
+    out.append("  texx -m doom2.txt doom1.txt tnt.txt plutonia.txt --overwrite "
+               "-o merge-textureALL.txt")
     out.append("  texx -m 32in24.txt jimmytex.txt -f doom2.txt --resolveDups")
     out.append("  texx -s mytex.txt other.wad -f doom2.wad")
     out.append("  texx -rm texture01.txt texture02.txt -f doom2-textures.txt")
     out.append("  texx -fp texturex.txt -sd \"C:/patches\" -o picked")
     out.append("  texx -fp merged.txt -sd doom2_patches doom1_patches "
                "--excludeShared -o exclusive")
+    out.append("  texx -m doom2.txt doom1.txt tnt.txt plutonia.txt "
+               "--outputRenamed -o mergeALL.txt")
+    out.append("  texx render mergeALL_renamedTextures.txt "
+               "-patchdir doom2\\patches doom\\patches -output _renders")
     out.append("  texx -a 32in24-defswani.txt jimmytex-defswani.txt "
                 "--default doom2-defswani.txt")
     out.append("")
@@ -1294,12 +1671,25 @@ def main():
                       help="convert one input to a DEUTEX-style text file")
     mode.add_argument("-m", "--merge", metavar="INPUT", nargs="+",
                       help="merge inputs into a file of unique texture definitions")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="--merge only: on a same-name/different-layout "
+                             "collision, keep the FIRST-listed input's "
+                             "definition and DROP the later one instead of "
+                             "renaming it. Dropped definitions are saved to "
+                             "<output>---overwritten.txt")
     parser.add_argument("--resolveDups", action="store_true",
                         help="--merge only: also write "
                              "duplicates-resolved-<out>.txt containing every "
                              "true duplicate (identical name+layout), renamed "
                              "so each is unique. Does not change unique-"
                              "textureX.txt itself.")
+    parser.add_argument("--outputRenamed", "--outputrenamed",
+                        dest="outputRenamed", action="store_true",
+                        help="--merge only: also write "
+                             "<output>_renamedTextures.txt, a valid DEUTEX "
+                             "definition file grouping every name-collision "
+                             "set (kept original + losing definitions under "
+                             "unique names) for use with 'texx render'")
     mode.add_argument("-s", "--subtract", metavar="INPUT", nargs="+",
                       help="base texturex.txt followed by inputs whose identical "
                            "definitions are removed from it")
@@ -1311,10 +1701,19 @@ def main():
                       nargs="+",
                       help="merge SWANTBLS/defswani switch+animation files into "
                            "--default (which is kept 100%% unchanged); needs --default")
+    mode.add_argument("-rd", "--render", metavar="TEXTUREX",
+                      help="composite each texture definition into a "
+                           "true-colour PNG using patch images from "
+                           "--patchdir (needs Pillow)")
     mode.add_argument("-rm", "--remove", metavar="INPUT", nargs="+",
                       help="remove --filter definitions from each input "
                            "INDEPENDENTLY (no merging); each is saved as "
                            "removed-<original filename> (needs --filter)")
+    parser.add_argument("-pd", "-patchdir", "--patchdir", dest="patchdir",
+                        metavar="DIR", nargs="+",
+                        help="director(ies) of patch images for --render, "
+                             "scanned recursively (first-listed dir wins "
+                             "duplicate filenames)")
     parser.add_argument("-f", "--filter", metavar="INPUT", nargs="+", default=[],
                         help="definitions to exclude from --merge/--subtract/"
                              "--remove output (identical name+layout matches "
@@ -1334,14 +1733,26 @@ def main():
     parser.add_argument("--default", metavar="DEFAULT",
                         help="base defswani.txt that is reproduced 100%% unchanged "
                              "(--animation only, required)")
-    parser.add_argument("-o", "--output", metavar="PATH",
+    parser.add_argument("-o", "--output", "-output", metavar="PATH",
                         help="output file, or output directory for --findPatches/"
-                             "--remove "
+                             "--remove/--render "
                              "(defaults: texturex.txt / unique-textureX.txt / "
                              "<base>-subtracted.txt / <input>-patches / "
-                             "merged-defswani.txt / current directory)")
-    args = parser.parse_args()
+                             "merged-defswani.txt / <input>-renders / "
+                             "current directory)")
 
+    # Allow 'texx render file.txt ...' as a friendlier spelling of --render.
+    argv = sys.argv[1:]
+    if argv and argv[0] == "render":
+        argv[0] = "--render"
+    args = parser.parse_args(argv)
+
+    if args.patchdir and not args.render:
+        die("--patchdir only applies to --render")
+    if args.render and not args.patchdir:
+        die("--render needs at least one --patchdir directory")
+    if args.outputRenamed and not args.merge:
+        die("--outputRenamed only applies to --merge")
     if args.sourcedir and not args.findPatches:
         die("--sourcedir only applies to --findPatches")
     if args.filter and not (args.merge or args.subtract or args.remove):
@@ -1350,6 +1761,11 @@ def main():
         die("--default only applies to --animation")
     if args.resolveDups and not args.merge:
         die("--resolveDups only applies to --merge")
+    if args.overwrite and not args.merge:
+        die("--overwrite only applies to --merge")
+    if args.overwrite and args.resolveDups:
+        die("--overwrite and --resolveDups contradict each other "
+            "(one drops collisions, the other renames them)")
     if args.excludeShared and not args.findPatches:
         die("--excludeShared only applies to --findPatches")
     if args.excludeShared and (not args.sourcedir or len(args.sourcedir) < 2):
@@ -1360,7 +1776,7 @@ def main():
         do_convert(args.convert, args.output or "texturex.txt")
     elif args.merge:
         do_merge(args.merge, args.filter, args.output or "unique-textureX.txt",
-                 args.resolveDups)
+                 args.resolveDups, args.overwrite, args.outputRenamed)
     elif args.subtract:
         if len(args.subtract) < 2 and not args.filter:
             die("--subtract needs a base file plus at least one other input "
@@ -1375,6 +1791,8 @@ def main():
         if not args.default:
             die("--animation requires --default")
         do_animation(args.animation, args.default, args.output or "merged-defswani.txt")
+    elif args.render:
+        do_render(args.render, args.patchdir, args.output)
     else:
         if not args.filter:
             die("--remove requires --filter (nothing to remove otherwise)")
