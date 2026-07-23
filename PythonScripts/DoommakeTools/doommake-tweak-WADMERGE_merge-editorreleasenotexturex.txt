@@ -1,0 +1,50 @@
+# ===========================================================================
+# WadMerge Script — Editor Release WAD (no TEXTURE1/2, PNAMES, ANIMATED, SWITCHES)
+# ===========================================================================
+# Identical to the editor release WAD, but with texture definition lumps
+# stripped out. Instead of merging textures.wad wholesale, the texture
+# sources are merged directly — flats, patches, and mergetexturedir blocks
+# only; mergedeutexfile and mergeswantbls are omitted.
+#
+# No MAP99 check — this target never includes maps.
+#
+# Argument 0: The build directory.
+# Argument 1: The source directory.
+# Argument 2: The output WAD name (editor-assets-release-notexturex.wad)
+# ===========================================================================
+
+# Turn all carats/circumflexes in filenames into backslashes in entries.
+filecharsub ^ \
+
+create out
+datemarker out __VER__
+mergefile  out $1/wadinfo.txt
+mergefile  out $1/credits.txt
+
+mergefile  out $0/dehacked.deh DEHACKED
+mergewad   out $0/assets.wad
+
+# Inline texture sources — omitting mergedeutexfile and mergeswantbls
+# (no TEXTURE1, TEXTURE2, PNAMES, ANIMATED, SWITCHES)
+
+# Flats
+marker             out ff_start
+mergenamespacefile out $1/textures/animflats.wad ff
+mergedir           out $1/textures/flats
+mergedir           out $0/convert/flats
+marker             out ff_end
+
+# Patches
+marker             out pp_start
+mergedir           out $1/textures/patches
+mergedir           out $0/convert/patches
+marker             out pp_end
+
+# Single-patch textures
+mergetexturedir    out $1/textures/texture1 texture1
+mergetexturedir    out $0/convert/texture1 texture1
+mergetexturedir    out $1/textures/texture2 texture2
+mergetexturedir    out $0/convert/texture2 texture2
+
+finish out $0/$2
+end

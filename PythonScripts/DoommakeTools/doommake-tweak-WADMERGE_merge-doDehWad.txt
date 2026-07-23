@@ -1,0 +1,9 @@
+# Create an in-memory buffer called OUT
+CREATE OUT
+# Import the .deh file from %2 (source dir) as lump name DEHACKED
+MERGEFILE OUT ./build/dehacked.deh DEHACKED
+
+# Write OUT to %1/dehonly.wad (build dir) and discard buffer
+FINISH OUT ./build/dehacked.wad
+
+END

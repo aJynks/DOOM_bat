@@ -1,89 +1,34 @@
 @echo off
-REM =====================================================
-REM mdoom.bat
-REM Creates _config folder structure for Doom projects.
-REM Supports:
-REM   -a Author Name
-REM   -w Wad Name
-REM No quotes needed, order doesn’t matter.
-REM =====================================================
+setlocal EnableExtensions EnableDelayedExpansion
 
-setlocal enabledelayedexpansion
+REM Create the Doom project config directories in the current directory.
+mkdir "_config" 2>nul
+mkdir "_config\Autosaves" 2>nul
+mkdir "_config\Demos" 2>nul
+mkdir "_config\Screenshots" 2>nul
 
-set "AUTHOR="
-set "WAD="
-set "currentFlag="
-
-REM --- Parse all arguments ---
-:parse
-if "%~1"=="" goto done_parse
-
-if /i "%~1"=="-a" (
-    set "currentFlag=AUTHOR"
-    shift
-    goto parse
-)
-
-if /i "%~1"=="-w" (
-    set "currentFlag=WAD"
-    shift
-    goto parse
-)
-
-REM Append words to whichever flag is active
-if defined currentFlag (
-    if "!%currentFlag%!"=="" (
-        set "%currentFlag%=%~1"
-    ) else (
-        set "%currentFlag%=!%currentFlag%! %~1"
+REM Explicit invocation: mdoom -invun <wadname>.wad
+if /i "%~1"=="-invun" (
+    if not "%~2"=="" (
+        python "%~dp0addInvun.py" "%~2"
     )
-)
-shift
-goto parse
-
-:done_parse
-
-REM --- Handle all cases ---
-
-REM 1) No params
-if "%AUTHOR%"=="" if "%WAD%"=="" (
-    echo Creating _config in current directory...
-    mkdir "_config" 2>nul
-    mkdir "_config\Autosaves" 2>nul
-    mkdir "_config\Demos" 2>nul
-    mkdir "_config\Screenshots" 2>nul
-    echo Done.
     goto :eof
 )
 
-REM 2) -a only (error)
-if not "%AUTHOR%"=="" if "%WAD%"=="" (
-    echo [ERROR] Missing -w Wad Name. Nothing created.
-    pause
-    goto :eof
+REM Any other arguments are ignored. Bare mdoom continues below.
+if not "%~1"=="" goto :eof
+
+REM Find WAD files in the current directory.
+set "WAD_COUNT=0"
+set "ONLY_WAD="
+for /f "delims=" %%F in ('dir /b /a-d "*.wad" 2^>nul') do (
+    set /a WAD_COUNT+=1
+    set "ONLY_WAD=%%F"
 )
 
-REM 3) -w only
-if "%AUTHOR%"=="" if not "%WAD%"=="" (
-    echo Creating structure for Wad: "%WAD%"...
-    mkdir "%WAD%" 2>nul
-    mkdir "%WAD%\_config" 2>nul
-    mkdir "%WAD%\_config\Autosaves" 2>nul
-    mkdir "%WAD%\_config\Demos" 2>nul
-    mkdir "%WAD%\_config\Screenshots" 2>nul
-    echo Done.
-    goto :eof
+REM Automatically run addInvun.py only when exactly one WAD was found.
+if "!WAD_COUNT!"=="1" (
+    python "%~dp0addInvun.py" "!ONLY_WAD!"
 )
 
-REM 4) -a and -w
-if not "%AUTHOR%"=="" if not "%WAD%"=="" (
-    echo Creating structure for "%AUTHOR%\%WAD%"...
-    mkdir "%AUTHOR%" 2>nul
-    mkdir "%AUTHOR%\%WAD%" 2>nul
-    mkdir "%AUTHOR%\%WAD%\_config" 2>nul
-    mkdir "%AUTHOR%\%WAD%\_config\Autosaves" 2>nul
-    mkdir "%AUTHOR%\%WAD%\_config\Demos" 2>nul
-    mkdir "%AUTHOR%\%WAD%\_config\Screenshots" 2>nul
-    echo Done.
-    goto :eof
-)
+endlocal

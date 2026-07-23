@@ -1,0 +1,25 @@
+# ===========================================================================
+# WadMerge Script for Palette WAD
+# ===========================================================================
+#
+# Argument 0: The build directory.
+# Argument 1: The source directory.
+# Argument 2: The output WAD.
+#
+
+create out
+
+# Palettes
+mergedir  out $1/assets/palettes nomarkers
+mergedir  out $0/convert/palettes nomarkers
+
+# Primary Colormaps
+mergedir  out $1/assets/colormaps nomarkers
+mergedir  out $0/convert/colormaps nomarkers
+
+# Secondary Colormaps
+mergedir  out $1/assets/colormaps-secondary nomarkers
+mergedir  out $0/convert/colormaps-secondary nomarkers
+
+finish out $0/$2
+end

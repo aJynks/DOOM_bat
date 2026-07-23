@@ -1,0 +1,24 @@
+# ===========================================================================
+# WadMerge Script — Editor Release WAD (with MAP99)
+# ===========================================================================
+# Same as the no-map variant, but also merges in a single MAP99 wad.
+# Used when MAP99 is present.
+#
+# Argument 0: The build directory.
+# Argument 1: The source directory.
+# Argument 2: The output WAD name (editor-assets-release.wad)
+# Argument 3: Full path to the MAP99 wad to merge in.
+# ===========================================================================
+
+create out
+datemarker out __VER__
+mergefile  out $1/wadinfo.txt
+mergefile  out $1/credits.txt
+
+mergefile  out $0/dehacked.deh DEHACKED
+mergewad   out $0/assets.wad
+mergewad   out $0/textures.wad
+mergewad   out $3
+
+finish out $0/$2
+end

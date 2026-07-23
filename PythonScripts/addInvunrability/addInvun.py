@@ -103,16 +103,16 @@ def _print_help(invun_names, iwad_names):
 
 {c(CYAN, 'ARGUMENTS')}
   {c(GREEN, 'input.wad')}        WAD whose COLORMAP is used as the base.
-                   {c(DIM, 'If it has no COLORMAP, --iwad becomes required and')}
-                   {c(DIM, 'supplies the base colormap instead.')}
+                   {c(DIM, f'If it has no COLORMAP, {IWAD_DEFAULT} is used as the')}
+                   {c(DIM, 'base automatically unless --iwad overrides it.')}
   {c(GREEN, 'source')}           WAD (path) or alias providing the invulnerability row.
                    {c(DIM, f'Aliases: {invun_names}')}
                    {c(DIM, f'Default if omitted: {INVUN_DEFAULT}')}
 
 {c(CYAN, 'OPTIONS')}
-  {c(GREEN, '--iwad path|alias')}  Fallback base colormap when input.wad has none.
+  {c(GREEN, '--iwad path|alias')}  Override the fallback base colormap.
                      {c(DIM, f'Aliases: {iwad_names}')}
-                     {c(DIM, f'Bare --iwad uses the default: {IWAD_DEFAULT}')}
+                     {c(DIM, f'Default when omitted or bare: {IWAD_DEFAULT}')}
   {c(GREEN, '+2ndary')}            Also patch every secondary colormap lump found in
   {c(GREEN, '+secondary')}         the input WAD (any lump of exactly 8704 bytes that
                      {c(DIM, 'is not COLORMAP, e.g. BLUMAP, REDMAP) and include')}
@@ -261,23 +261,10 @@ def main():
     base_from_iwad = None
 
     if base_cmap is None:
+        # No primary COLORMAP in the input: automatically use the default IWAD
+        # unless the caller explicitly selected another fallback with --iwad.
         if iwad_value is None:
-            found = []
-            fseen = set()
-            for name, offset, size in input_lumps:
-                if size == COLORMAP_SIZE and name not in fseen:
-                    fseen.add(name)
-                    found.append(name)
-            extra = ""
-            if found:
-                extra = (f"\n       Note: the input WAD does contain "
-                         f"{len(found)} colormap-sized lump(s): {', '.join(found)}\n"
-                         f"       but none is named COLORMAP, so there is no primary "
-                         f"colormap to use as a base.")
-            err(f"'{input_path}' contains no COLORMAP lump.\n"
-                f"       You must also supply the IWAD to take the base colormap from:\n"
-                f"           addInvun {input_path} {source_value} --iwad {IWAD_DEFAULT}\n"
-                f"       Known IWAD aliases: {', '.join(IWAD_ALIASES)}{extra}")
+            iwad_value = IWAD_DEFAULT
         iwad_path = resolve_alias(iwad_value, IWAD_ALIASES, "IWAD")
         base_cmap, _, _ = get_colormap(iwad_path, "IWAD")
         if base_cmap is None:
