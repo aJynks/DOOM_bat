@@ -1,0 +1,251 @@
+// Stock Doom monster DECORATE definitions, as published in the DECORATE
+// section of the ZDoom wiki Classes: pages. Used as ground-truth test input:
+// each converts to a DECOHack thing that should match the real vanilla thing.
+
+actor ZombieMan 3004
+{
+  health 20
+  radius 20
+  height 56
+  mass 100
+  speed 8
+  painchance 200
+  seesound "grunt/sight"
+  attacksound "grunt/attack"
+  painsound "grunt/pain"
+  deathsound "grunt/death"
+  activesound "grunt/active"
+  obituary "%o was killed by a zombieman."
+  dropitem "Clip"
+  MONSTER
+  states
+  {
+  Spawn:
+    POSS AB 10 A_Look
+    loop
+  See:
+    POSS AABBCCDD 4 A_Chase
+    loop
+  Missile:
+    POSS E 10 A_FaceTarget
+    POSS F 8 A_PosAttack
+    POSS E 8
+    goto See
+  Pain:
+    POSS G 3
+    POSS G 3 A_Pain
+    goto See
+  Death:
+    POSS H 5
+    POSS I 5 A_Scream
+    POSS J 5 A_NoBlocking
+    POSS K 5
+    POSS L -1
+    stop
+  XDeath:
+    POSS M 5
+    POSS N 5 A_XScream
+    POSS O 5 A_NoBlocking
+    POSS PQRST 5
+    POSS U -1
+    stop
+  Raise:
+    POSS K 5
+    POSS JIH 5
+    goto See
+  }
+}
+
+actor DoomImp 3001
+{
+  health 60
+  radius 20
+  height 56
+  mass 100
+  speed 8
+  painchance 200
+  seesound "imp/sight"
+  painsound "imp/pain"
+  deathsound "imp/death"
+  activesound "imp/active"
+  obituary "%o was slain by an imp."
+  hitobituary "%o was clawed to death by an imp."
+  MONSTER
+  states
+  {
+  Spawn:
+    TROO AB 10 A_Look
+    loop
+  See:
+    TROO AABBCCDD 3 A_Chase
+    loop
+  Melee:
+  Missile:
+    TROO EF 8 A_FaceTarget
+    TROO G 6 A_TroopAttack
+    goto See
+  Pain:
+    TROO H 2
+    TROO H 2 A_Pain
+    goto See
+  Death:
+    TROO I 8
+    TROO J 8 A_Scream
+    TROO K 6
+    TROO L 6 A_NoBlocking
+    TROO M -1
+    stop
+  XDeath:
+    TROO N 5
+    TROO O 5 A_XScream
+    TROO P 5
+    TROO Q 5 A_NoBlocking
+    TROO RST 5
+    TROO U -1
+    stop
+  Raise:
+    TROO ML 8
+    TROO KJI 6
+    goto See
+  }
+}
+
+actor Demon 3002
+{
+  health 150
+  radius 30
+  height 56
+  mass 400
+  speed 10
+  painchance 180
+  seesound "demon/sight"
+  attacksound "demon/melee"
+  painsound "demon/pain"
+  deathsound "demon/death"
+  activesound "demon/active"
+  obituary "%o was bruised by a demon."
+  MONSTER
+  states
+  {
+  Spawn:
+    SARG AB 10 A_Look
+    loop
+  See:
+    SARG AABBCCDD 2 A_Chase
+    loop
+  Melee:
+    SARG EF 8 A_FaceTarget
+    SARG G 8 A_SargAttack
+    goto See
+  Pain:
+    SARG H 2
+    SARG H 2 A_Pain
+    goto See
+  Death:
+    SARG I 8
+    SARG J 8 A_Scream
+    SARG K 4
+    SARG L 4 A_NoBlocking
+    SARG M 4
+    SARG N -1
+    stop
+  Raise:
+    SARG N 5
+    SARG MLKJI 5
+    goto See
+  }
+}
+
+actor Cacodemon 3005
+{
+  health 400
+  radius 31
+  height 56
+  mass 400
+  speed 8
+  painchance 128
+  seesound "caco/sight"
+  painsound "caco/pain"
+  deathsound "caco/death"
+  activesound "caco/active"
+  attacksound "caco/melee"
+  obituary "%o was smitten by a cacodemon."
+  hitobituary "%o got too close to a cacodemon."
+  MONSTER
+  +FLOAT
+  +NOGRAVITY
+  states
+  {
+  Spawn:
+    HEAD A 10 A_Look
+    loop
+  See:
+    HEAD A 3 A_Chase
+    loop
+  Missile:
+    HEAD BC 5 A_FaceTarget
+    HEAD D 5 bright A_HeadAttack
+    goto See
+  Pain:
+    HEAD E 3
+    HEAD E 3 A_Pain
+    HEAD F 6
+    goto See
+  Death:
+    HEAD G 8
+    HEAD H 8 A_Scream
+    HEAD IJ 8
+    HEAD K 8 A_NoBlocking
+    HEAD L -1 A_SetFloorClip
+    stop
+  Raise:
+    HEAD L 8 A_UnSetFloorClip
+    HEAD KJIHG 8
+    goto See
+  }
+}
+
+actor LostSoul 3006
+{
+  health 100
+  radius 16
+  height 56
+  mass 50
+  speed 8
+  damage 3
+  painchance 256
+  attacksound "skull/melee"
+  painsound "skull/pain"
+  deathsound "skull/death"
+  activesound "skull/active"
+  obituary "%o was spooked by a lost soul."
+  MONSTER
+  +FLOAT
+  +NOGRAVITY
+  states
+  {
+  Spawn:
+    SKUL AB 10 bright A_Look
+    loop
+  See:
+    SKUL AB 6 bright A_Chase
+    loop
+  Missile:
+    SKUL C 10 bright A_FaceTarget
+    SKUL D 4 bright A_SkullAttack
+    SKUL CD 4 bright
+    goto Missile+2
+  Pain:
+    SKUL E 3 bright
+    SKUL E 3 bright A_Pain
+    goto See
+  Death:
+    SKUL F 6 bright
+    SKUL G 6 bright A_Scream
+    SKUL H 6 bright
+    SKUL I 6 bright A_NoBlocking
+    SKUL J 6
+    SKUL K 6
+    stop
+  }
+}

@@ -8,7 +8,7 @@
 # shim), or runnable directly:  py doom_script.py [args...]
 #
 # All editable data (source port exes, IWAD paths, pak WAD lists, default
-# port/IWAD) lives in the shared _dmake_settings.conf, alongside dmake and
+# port/IWAD) lives in the shared __suite_settings.txt, alongside dmake and
 # doommake-tweak.
 #
 # Behaviour (unchanged from the PowerShell version):
@@ -35,7 +35,7 @@ from _suite_common import (
 )
 
 # ==============================================================================
-# Settings (populated from _dmake_settings.conf at startup)
+# Settings (populated from __suite_settings.txt at startup)
 # ==============================================================================
 SOURCE_PORTS = {}
 IWADS        = {}
@@ -457,13 +457,13 @@ def show_help():
     print(WHT("      * reads default warp/skill from doom-loader.conf, CLI overrides them"))
 
     section_header("KEYWORDS")
-    print(WHT("  SOURCE PORTS (edit 'source_ports' in _dmake_settings.conf):"))
+    print(WHT("  SOURCE PORTS (edit 'source_ports' in __suite_settings.txt):"))
     print(GRY("    " + ", ".join(sorted(SOURCE_PORTS.keys()))))
     print("")
-    print(WHT("  IWADS (edit 'iwads' in _dmake_settings.conf):"))
+    print(WHT("  IWADS (edit 'iwads' in __suite_settings.txt):"))
     print(GRY("    " + ", ".join(sorted(IWADS.keys()))))
     print("")
-    print(WHT("  PAKS (edit 'paks' in _dmake_settings.conf):"))
+    print(WHT("  PAKS (edit 'paks' in __suite_settings.txt):"))
     paks = ", ".join(sorted(PAKS.keys())) or "(none defined)"
     print(GRY("    " + paks))
 
@@ -519,7 +519,7 @@ def show_help():
     print(GRY("    doom woof doom2 -record demo.lmp"))
 
     section_header("EDITING SETTINGS")
-    print(WHT("  All editable data lives in _dmake_settings.conf (shared with dmake"))
+    print(WHT("  All editable data lives in __suite_settings.txt (shared with dmake"))
     print(WHT("  and doommake-tweak), in the same PATH folder as these tools:"))
     print(WHT("  1) source_ports : keyword -> exe path"))
     print(WHT("  2) iwads        : keyword -> iwad path"))

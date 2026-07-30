@@ -5,6 +5,9 @@
 INVUN_ALIASES = {
     "grey":     r"D:\Projects\DoomProjects\_SourcePorts\_Wads and Mods\_tweaks\All Ports\Invuns\doom2-pal0-NewInVun-brown.wad",
     "brown":    r"D:\Projects\DoomProjects\_SourcePorts\_Wads and Mods\_tweaks\All Ports\Invuns\doom2-pal0-NewInVun-grey.wad",
+    "nent": r"D:\Projects\DoomProjects\_SourcePorts\_Wads and Mods\Famous Mappers\AshtralFiend\Nostalgic Entropy\NE.wad",
+    "overd": r"D:\Projects\DoomProjects\_SourcePorts\_Wads and Mods\Famous Mappers\AshtralFiend\Neon Overdrive\NEONOVER.wad",
+    "evi2": r"D:\Projects\DoomProjects\_SourcePorts\_Wads and Mods\Famous Mappers\DragonFly\Eviternity\Eviternity II/Eviternity-2.wad",
 }
 INVUN_DEFAULT = "brown"
 # ─────────────────────────────────────────────────────────────────────────────
@@ -37,6 +40,7 @@ Colormap lumps are always exactly 8704 bytes (34 rows x 256 bytes):
     row   33    unused/filler
 """
 
+import ntpath
 import os
 import struct
 import sys
@@ -117,6 +121,7 @@ def _print_help(invun_names, iwad_names):
   {c(GREEN, '+secondary')}         the input WAD (any lump of exactly 8704 bytes that
                      {c(DIM, 'is not COLORMAP, e.g. BLUMAP, REDMAP) and include')}
                      {c(DIM, 'them in the output WAD under their original names.')}
+  {c(GREEN, '--list  -list')}      List all invun aliases and their paths.
   {c(GREEN, '-h  --help  -help')}  Show this help.
 
 {c(CYAN, 'EXAMPLES')}
@@ -131,6 +136,25 @@ def _print_help(invun_names, iwad_names):
   addInvun mymap.wad brown +2ndary
       {c(DIM, 'Also patch secondary colormaps (BLUMAP etc.) from mymap.wad.')}
 """)
+
+# ── list ─────────────────────────────────────────────────────────────────────
+
+def show_list():
+    try:
+        _print_list()
+    except BrokenPipeError:
+        pass
+    sys.exit(0)
+
+
+def _print_list():
+    pad = max(len(k) for k in INVUN_ALIASES) if INVUN_ALIASES else 0
+    lines = [f"\n{c(CYAN, 'INVUN ALIASES')}"]
+    for alias, path in INVUN_ALIASES.items():
+        default_tag = f"  {c(DIM, '(default)')}" if alias == INVUN_DEFAULT else ""
+        filename = ntpath.basename(path)
+        lines.append(f"  {c(GREEN, alias.ljust(pad))}  {c(DIM, filename)}{default_tag}")
+    print("\n".join(lines) + "\n")
 
 # ── WAD reading / writing ────────────────────────────────────────────────────
 
@@ -217,6 +241,8 @@ def resolve_alias(value, table, kind):
 def parse_args(argv):
     if not argv or any(a.lower() in ("-h", "--help", "-help") for a in argv):
         show_help()
+    if any(a.lower() in ("--list", "-list") for a in argv):
+        show_list()
 
     do_secondary = False
     args = []
@@ -233,6 +259,8 @@ def parse_args(argv):
                 i += 1
             else:
                 iwad_value = IWAD_DEFAULT
+        elif al in ("--list", "-list"):
+            pass  # already handled above; won't reach here
         elif a.startswith("-"):
             err(f"Unknown option '{a}'. Use -h for help.")
         else:

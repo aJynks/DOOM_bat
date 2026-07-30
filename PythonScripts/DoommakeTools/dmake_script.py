@@ -33,7 +33,7 @@
 #   - Directory paths work with or without a trailing \ or /.
 #   - When "create -d" changes directory, the change is propagated back to the
 #     calling cmd shell via the DMAKE_CD_FILE env var (set by dmake.bat).
-#   - Shared editable data lives in _dmake_settings.conf, loaded via
+#   - Shared editable data lives in __suite_settings.txt, loaded via
 #     _suite_common.py. Sibling suite tools (doommake-tweak, doom) are .bat/.py.
 #
 # Pure stdlib. No dependencies.
@@ -54,10 +54,10 @@ from _suite_common import (
 )
 
 # ==============================================================================
-# Settings - loaded from _dmake_settings.conf (found on PATH)
+# Settings - loaded from __suite_settings.txt (found on PATH)
 # ------------------------------------------------------------------------------
 # All editable data (IWAD paths, hack types, clean strip sets, defaults) lives
-# in _dmake_settings.conf, shared with doom_script.py and
+# in __suite_settings.txt, shared with doom_script.py and
 # doommake-tweak-script.py.
 # The variables below are populated by apply_settings() at startup.
 # ==============================================================================

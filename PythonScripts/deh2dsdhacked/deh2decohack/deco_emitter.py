@@ -153,6 +153,11 @@ class Tables:
         self.pointers = _load("pointers.json")      # name -> sig
         self.flags = _load("flags.json")            # {"doom": bit->name, "mbf21": ...}
         self.strings = _load("strings.json")        # default text -> mnemonic
+        # DECOHack's OWN built-in slot mnemonics (from its constants/*.dh
+        # includes). These are the names `#include <dsdhacked>` provides, so
+        # they are what generated output should refer to things/weapons by.
+        self.aliases = _load("aliases.json")
+        self.weaponinfo = _load("weaponinfo.json")
         # BEX codeptr names come without A_; build lookup
         self.ptr_by_bare = {k[2:].upper(): k for k in self.pointers}
 
@@ -286,11 +291,37 @@ class Emitter:
         return self.sound_rename.get(name, name)
 
     def thing_display_name(self, num):
+        """Priority: the patch's own declared name (explicit modder intent) ->
+        DECOHack's built-in slot alias -> engine enum name -> bare fallback."""
         if num in self.ir.things_names:
             return self.ir.things_names[num]
+        return self.thing_alias(num)
+
+    def thing_alias(self, num):
+        """DECOHack's built-in mnemonic for a thing slot, ignoring any name
+        the patch itself declared."""
+        alias = self.t.aliases.get("things", {}).get(str(num))
+        if alias:
+            return alias
         if 1 <= num <= len(self.t.mobjinfo):
+            # Upstream DoomTools has at least one duplicated #define (slot 128
+            # is both MT_MISC77 and MT_MISC78), which leaves a gap; the engine
+            # enum name is the correct intended value in that case.
             return self.t.mobjinfo[num - 1]["name"]
         return f"Thing{num}"
+
+    def weapon_display_name(self, num):
+        if num in self.ir.weapons_names:
+            return self.ir.weapons_names[num]
+        return self.weapon_alias(num)
+
+    def weapon_alias(self, num):
+        alias = self.t.aliases.get("weapons", {}).get(str(num))
+        if alias:
+            return alias
+        if 0 <= num < len(self.t.weaponinfo):
+            return self.t.weaponinfo[num]["name"]
+        return f"Weapon{num}"
 
     def base_thing(self, num):
         if 1 <= num <= len(self.t.mobjinfo):
@@ -299,6 +330,73 @@ class Emitter:
 
     def warn(self, msg):
         self.warnings.append(msg)
+
+    # ------------------------------------------------------------------
+    # Base-table state ownership
+    # ------------------------------------------------------------------
+
+    BASE_THING_ENTRIES = [
+        ("spawnstate", "spawn"), ("seestate", "see"), ("meleestate", "melee"),
+        ("missilestate", "missile"), ("painstate", "pain"),
+        ("deathstate", "death"), ("xdeathstate", "xdeath"),
+        ("raisestate", "raise"),
+    ]
+    # DECOHack label names for the vanilla weapon state entry points.
+    # upstate = weapon being raised = DECOHack `select`;
+    # downstate = being lowered = DECOHack `deselect`.
+    BASE_WEAPON_ENTRIES = [
+        ("readystate", "ready"), ("downstate", "deselect"),
+        ("upstate", "select"), ("atkstate", "fire"),
+        ("holdatkstate", "fire (hold)"), ("flashstate", "flash"),
+    ]
+
+    def build_base_ownership(self):
+        """Map every base state index to the vanilla thing/weapon whose default
+        state chains reach it, and which entry label it sits under.
+
+        This is what lets a states-only patch (one that edits Frame blocks but
+        never declares the owning Thing) still say which actor each edited
+        state actually belongs to.
+        """
+        self.base_owner = defaultdict(list)   # state -> [(dist, kind, num, label)]
+
+        def walk(start, kind, num, label):
+            cur, dist, seen = start, 0, set()
+            while cur and cur not in seen and dist < 4000:
+                seen.add(cur)
+                self.base_owner[cur].append((dist, kind, num, label))
+                nxt = self.base_state(cur)["next"]
+                if nxt == cur:
+                    break
+                cur = nxt
+                dist += 1
+
+        for i, m in enumerate(self.t.mobjinfo):
+            for field, label in self.BASE_THING_ENTRIES:
+                start = m.get(field, 0)
+                if isinstance(start, int) and start:
+                    walk(start, "thing", i + 1, label)
+        for wnum, w in enumerate(self.t.weaponinfo):
+            for field, label in self.BASE_WEAPON_ENTRIES:
+                start = w.get(field, 0)
+                if isinstance(start, int) and start:
+                    walk(start, "weapon", wnum, label)
+
+    def base_owner_of(self, state):
+        """Best guess owner of a base state: the entry chain that reaches it
+        soonest wins; ties broken by lowest slot. Returns (text, extra_count)
+        or (None, 0)."""
+        recs = self.base_owner.get(state)
+        if not recs:
+            return None, 0
+        recs = sorted(recs, key=lambda r: (r[0], r[1] != "thing", r[2]))
+        dist, kind, num, label = recs[0]
+        distinct = {(k, n) for _d, k, n, _l in recs}
+        if kind == "thing":
+            text = f"thing {num} ({self.thing_alias(num)}) {label} states"
+        else:
+            text = f"weapon {num} ({self.weapon_alias(num)}) {label} states"
+        return text, len(distinct) - 1
 
     # ------------------------------------------------------------------
     # Ownership / pinning analysis
@@ -646,7 +744,9 @@ class Emitter:
         name = self.thing_display_name(num)
         base = self.base_thing(num)
         w = []
-        w.append(f'thing {num} "{name}"' + (f"\t// {base.get('name')}" if base.get("name") else ""))
+        alias = self.thing_alias(num)
+        w.append(f'thing {num} "{name}"'
+                 + (f"\t// {alias}" if alias and alias != name else ""))
         w.append("{")
 
         body = []
@@ -838,6 +938,51 @@ class Emitter:
         w.append("}")
         return w
 
+    def _pinned_owner_comments(self, run):
+        """Comment lines identifying who a pinned state run belongs to.
+
+        Two cases:
+        - the patch declares the owning thing/weapon, so DEH-side ownership
+          analysis found it -> name it via `reached from`;
+        - nothing in the patch declares an owner (a states-only patch), so fall
+          back to the vanilla base tables to say which stock actor's states
+          these actually are.
+        """
+        lines = []
+        deh_owners = set()
+        for s in run:
+            deh_owners |= self.owners.get(s, set())
+        if deh_owners:
+            parts = []
+            for kind, num in sorted(deh_owners):
+                name = (self.thing_display_name(num) if kind == "thing"
+                        else self.weapon_display_name(num))
+                parts.append(f"{kind} {num} ({name})")
+            lines.append("// reached from: " + ", ".join(parts))
+            return lines
+
+        # Orphan states: attribute them from the vanilla base tables.
+        seen, ordered = set(), []
+        for s in run:
+            text, extra = self.base_owner_of(s)
+            if text and text not in seen:
+                seen.add(text)
+                ordered.append((s, text, extra))
+        if not ordered:
+            lines.append("// not reachable from any known thing or weapon "
+                         "(unused/free state)")
+            return lines
+        if len(ordered) == 1:
+            _s, text, extra = ordered[0]
+            suffix = f"; also used by {extra} other actor(s)" if extra else ""
+            lines.append(f"// vanilla {text}{suffix}")
+        else:
+            lines.append("// vanilla states, by index:")
+            for s, text, extra in ordered:
+                suffix = f"; also used by {extra} other actor(s)" if extra else ""
+                lines.append(f"//   {s}: {text}{suffix}")
+        return lines
+
     def emit_pinned_blocks(self):
         """Group pinned states into maximal consecutive-index runs whose
         next-links are sequential, emit as `state fill N { ... }` blocks,
@@ -867,9 +1012,7 @@ class Emitter:
             done.update(run)
             head = "state fill %d" % s if len(run) > 1 else "state %d" % s
             out.append("")
-            owners = self.owners.get(s, set())
-            if owners:
-                out.append("// reached from: " + ", ".join(f"{k} {n}" for k, n in sorted(owners)))
+            out.extend(self._pinned_owner_comments(run))
             out.append(head)
             out.append("{")
             i = 0
@@ -919,6 +1062,7 @@ class Emitter:
         o.append("   Target: DECOHack `dsdhacked` patch (MBF21 / dsda-doom)")
         o.append("*/")
 
+        self.build_base_ownership()
         self.analyze()
         self.compute_reskins()
 

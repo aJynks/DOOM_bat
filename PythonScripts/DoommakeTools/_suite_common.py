@@ -8,7 +8,7 @@
 #     doom.bat      -> doom_script.py
 #
 # Provides:
-#   - Settings loading from _dmake_settings.conf (JSON + full-line comments)
+#   - Settings loading from __suite_settings.txt (JSON + full-line comments)
 #   - ANSI colour helpers (NO_COLOR aware, VT enabled on Windows)
 #   - PATH lookup / external command execution
 #
@@ -23,7 +23,7 @@ import os
 import subprocess
 import sys
 
-SETTINGS_FILENAME = "_dmake_settings.conf"
+SETTINGS_FILENAME = "__suite_settings.txt"
 
 
 # ==============================================================================
@@ -206,7 +206,7 @@ def normalize_dirpath(path):
 # Settings
 # ==============================================================================
 def load_settings():
-    """Locate _dmake_settings.conf on PATH, strip full-line # and //
+    """Locate __suite_settings.txt on PATH, strip full-line # and //
     comments (blanked rather than removed so JSON error line numbers stay
     accurate), and parse it as JSON.
 

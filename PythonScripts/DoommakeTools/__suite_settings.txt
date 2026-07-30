@@ -1,5 +1,5 @@
 # ==============================================================================
-# _dmake_settings.conf
+# __suite_settings.txt
 # ------------------------------------------------------------------------------
 # Shared editable settings for the dmake tool suite:
 #   dmake_script.py       (dmake)     - iwads, hack_types, clean_strip_sets,

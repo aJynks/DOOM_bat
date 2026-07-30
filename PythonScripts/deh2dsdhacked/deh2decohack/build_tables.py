@@ -138,27 +138,81 @@ def parse_sounds():
 # ---------------------------------------------------------------- mobjinfo
 _MOBJ_HDR_RE = re.compile(r"\{\s*//\s*(MT_[A-Z0-9_]+)")
 
-def parse_mobjinfo(state_names_by_index_unused, flag_bits):
+# Field order verified against dsda-doom's info.h mobjinfo_t. The
+# doom_mobjinfo[] initializers supply values up to droppeditem and rely on C
+# zero-initialization for the heretic/mbf21 tail, so we only read this far.
+_MOBJ_FIELD_ORDER = [
+    "doomednum", "spawnstate", "spawnhealth", "seestate", "seesound",
+    "reactiontime", "attacksound", "painstate", "painchance", "painsound",
+    "meleestate", "missilestate", "deathstate", "xdeathstate", "deathsound",
+    "speed", "radius", "height", "mass", "damage", "activesound", "flags",
+    "raisestate", "droppeditem",
+]
+
+
+def _split_top_level(text):
+    """Split on commas that are not inside brackets."""
+    parts, depth, cur = [], 0, ""
+    for ch in text:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+    if cur.strip():
+        parts.append(cur.strip())
+    return parts
+
+
+def _strip_c_comments(text):
+    """Remove block comments and line comments.
+
+    This must happen BEFORE reading values positionally: dsda's info.c has
+    entries like
+
+        MF_SOLID|MF_SHOOTABLE|MF_COUNTKILL, // killough |MF_TRANSLUCENT,   // flags
+
+    where a disabled flag sits inside a comment. Anchoring on the trailing
+    "// fieldname" markers instead of position reads the commented-out text as
+    the real value, which silently corrupts the flag word.
+    """
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    return "\n".join(re.sub(r"//.*$", "", line) for line in text.split("\n"))
+
+
+def parse_mobjinfo(flag_bits):
     text = read("info.c")
     start = text.index("doom_mobjinfo[")
     body = text[start:text.index("\n};", start)]
-    # state name -> index comes from the DECOHack table implicitly; but dsda
-    # uses S_* names. Build S_* -> index from info.h enum, aligned for
-    # 0..966 (verified) and we only need vanilla things' fields anyway.
+
     s_index = build_s_index()
     sfx_index = build_sfx_index()
 
-    chunks = _MOBJ_HDR_RE.split(body)[1:]   # [name, chunk, name, chunk...]
+    # Grab entry names from the "{ // MT_FOO" headers before comments are
+    # stripped, then parse each entry body positionally.
+    marks = [(m.start(), m.group(1)) for m in _MOBJ_HDR_RE.finditer(body)]
     mobjs = []
-    for name, chunk in zip(chunks[0::2], chunks[1::2]):
+    for i, (pos, name) in enumerate(marks):
+        chunk_end = marks[i + 1][0] if i + 1 < len(marks) else len(body)
+        chunk = body[pos:chunk_end]
+        chunk = chunk[chunk.index("{") + 1:]
+        brace = chunk.rfind("}")
+        if brace >= 0:
+            chunk = chunk[:brace]
+        vals = _split_top_level(_strip_c_comments(chunk))
         entry = {"name": name}
-        for fm in re.finditer(r"([A-Za-z0-9_*|\- ]+?),?\s*//\s*([a-z]+)", chunk):
-            val, field = fm.group(1).strip(), fm.group(2)
+        for field, val in zip(_MOBJ_FIELD_ORDER, vals):
             entry[field] = _mobj_value(field, val, s_index, sfx_index, flag_bits)
         mobjs.append(entry)
     return mobjs
 
+
 def _mobj_value(field, val, s_index, sfx_index, flag_bits):
+    val = val.strip()
     if field == "flags":
         total = 0
         for part in val.split("|"):
@@ -166,13 +220,19 @@ def _mobj_value(field, val, s_index, sfx_index, flag_bits):
             if part and part != "0":
                 total |= flag_bits.get(part, 0)
         return total
-    if val.startswith("S_"):   return s_index.get(val, 0)
-    if val.startswith("sfx_"): return sfx_index.get(val, 0)
+    if val.startswith("S_"):
+        return s_index.get(val, 0)
+    if val.startswith("sfx_"):
+        return sfx_index.get(val, 0)
     m = re.match(r"^(-?\d+)\s*\*\s*FRACUNIT$", val)
-    if m: return int(m.group(1)) * 65536
-    if val == "FRACUNIT": return 65536
-    if re.match(r"^-?\d+$", val): return int(val)
+    if m:
+        return int(m.group(1)) * 65536
+    if val == "FRACUNIT":
+        return 65536
+    if re.match(r"^-?\d+$", val):
+        return int(val)
     return val
+
 
 def build_s_index():
     text = read("info.h")
@@ -222,6 +282,72 @@ MBF21_THING_FLAGS = ["LOGRAV","SHORTMRANGE","DMGIGNORED","NORADIUSDMG",
     "BOSS","MAP07BOSS1","MAP07BOSS2","E1M8BOSS","E2M8BOSS","E3M8BOSS",
     "E4M6BOSS","E4M8BOSS","RIP","FULLVOLSOUNDS"]
 
+# ---------------------------------------------------------------- weaponinfo
+# Field order verified against dsda-doom's d_items.h weaponinfo_t:
+#   ammo, upstate, downstate, readystate, atkstate, holdatkstate,
+#   flashstate, ammopershot, intflags, flags
+_WEAPON_FIELDS = ["ammo", "upstate", "downstate", "readystate", "atkstate",
+                  "holdatkstate", "flashstate", "ammopershot", "intflags",
+                  "flags"]
+_WEAPON_HDR_RE = re.compile(r"\{\s*//\s*([a-z0-9 ]+)\s*\n(.*?)\n\s*\}", re.S)
+
+def parse_weaponinfo():
+    text = read("d_items.c")
+    start = text.index("doom_weaponinfo[")
+    body = text[start:text.index("\n};", start)]
+    s_index = build_s_index()
+    weapons = []
+    for m in _WEAPON_HDR_RE.finditer(body):
+        name, chunk = m.group(1).strip(), m.group(2)
+        vals = []
+        for line in chunk.split("\n"):
+            line = re.sub(r"//.*$", "", line).strip().rstrip(",").strip()
+            if line:
+                vals.append(line)
+        entry = {"name": name}
+        for field, val in zip(_WEAPON_FIELDS, vals):
+            if val.startswith("S_"):
+                entry[field] = s_index.get(val, 0)
+            elif re.match(r"^-?\d+$", val):
+                entry[field] = int(val)
+            else:
+                entry[field] = val
+        weapons.append(entry)
+    return weapons
+
+# ---------------------------------------------------------------- aliases
+_DEFINE_RE = re.compile(r"^#define\s+([A-Z][A-Z0-9_]*)\s+(\d+)\s*$", re.M)
+
+def _parse_defines(paths, prefix):
+    """Parse DECOHack's own constant include files into slot -> mnemonic.
+    These are the built-in names that `#include <dsdhacked>` provides, so
+    they are the authoritative aliases to print in generated output."""
+    out, dupes = {}, []
+    for p in paths:
+        full = os.path.join(SRC, "dhconst", p)
+        if not os.path.isfile(full):
+            continue
+        with open(full, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+        for m in _DEFINE_RE.finditer(text):
+            name, slot = m.group(1), int(m.group(2))
+            if not name.startswith(prefix):
+                continue          # skip include-guard defines
+            if name.endswith("_FREE_START"):
+                continue
+            if slot in out and out[slot] != name:
+                dupes.append((slot, out[slot], name))
+                continue          # keep the first (lowest tier) name
+            out[slot] = name
+    return out, dupes
+
+def parse_aliases():
+    things, tdupes = _parse_defines(
+        ["doom19_things.dh", "boom_things.dh", "mbf_things.dh",
+         "extended_things.dh"], "MT_")
+    weapons, wdupes = _parse_defines(["doom19_weapons.dh"], "WP_")
+    return things, weapons, tdupes + wdupes
+
 # ---------------------------------------------------------------- strings
 def parse_default_strings():
     text = read("d_englsh.h", enc="latin-1")
@@ -241,8 +367,10 @@ def main():
     sprites = parse_sprites()
     sounds  = parse_sounds()
     flag_bits = doom_flag_values()
-    mobjs   = parse_mobjinfo(None, flag_bits)
+    mobjs   = parse_mobjinfo(flag_bits)
     strings = parse_default_strings()
+    alias_things, alias_weapons, alias_dupes = parse_aliases()
+    weaponinfo = parse_weaponinfo()
 
     # ------------- landmark verification (fail loudly on drift) -------------
     errs = []
@@ -260,12 +388,63 @@ def main():
         errs.append(f"mobj landmarks failed: [0]={mobjs[0]['name']} [14]={mobjs[14]['name']}")
     if mobjs[14].get("doomednum") != 3005:
         errs.append(f"MT_HEAD doomednum {mobjs[14].get('doomednum')} != 3005")
+    F = flag_bits
+    MONSTER_BITS = F["MF_SOLID"] | F["MF_SHOOTABLE"] | F["MF_COUNTKILL"]
+    caco_want = MONSTER_BITS | F["MF_FLOAT"] | F["MF_NOGRAVITY"]
+    if mobjs[14].get("flags") != caco_want:
+        errs.append(f"MT_HEAD flags {mobjs[14].get('flags')} != {caco_want}")
+    if mobjs[14].get("spawnhealth") != 400 or mobjs[14].get("mass") != 400:
+        errs.append(f"MT_HEAD health/mass wrong: {mobjs[14].get('spawnhealth')}/"
+                    f"{mobjs[14].get('mass')}")
+    # MT_TROOP: regression guard for the commented-out-flag parse bug
+    if mobjs[11].get("flags") != MONSTER_BITS:
+        errs.append(f"MT_TROOP flags {mobjs[11].get('flags')} != {MONSTER_BITS} "
+                    f"(comment-stripping regression?)")
+    if mobjs[11].get("radius") != 20 * 65536:
+        errs.append(f"MT_TROOP radius {mobjs[11].get('radius')} != {20*65536}")
     if pointers.get("A_RandomJump", {}).get("params") != ["STATE", "UINT"]:
         errs.append(f"A_RandomJump signature: {pointers.get('A_RandomJump')}")
     if not pointers.get("A_WeaponMeleeAttack", {}).get("weapon", False):
         # weapon-flag semantics check -- warn only, don't fail
         print("NOTE: A_WeaponMeleeAttack weapon flag is False; first enum bool "
               "may not mean 'weapon'", file=sys.stderr)
+    for slot, want in ((1, "MT_PLAYER"), (15, "MT_HEAD"), (109, "MT_MISC58"),
+                       (145, "MT_MUSICSOURCE"), (250, "MT_EXTRA99")):
+        if alias_things.get(slot) != want:
+            errs.append(f"thing alias {slot} = {alias_things.get(slot)} != {want}")
+    if len(weaponinfo) < 9:
+        errs.append(f"weaponinfo parsed {len(weaponinfo)} entries, expected >= 9")
+    else:
+        if weaponinfo[0]["name"] != "fist":
+            errs.append(f"weaponinfo[0] = {weaponinfo[0]['name']} != fist")
+        if weaponinfo[8]["name"] not in ("super shotgun", "supershotgun"):
+            errs.append(f"weaponinfo[8] = {weaponinfo[8]['name']} != super shotgun")
+    for slot, want in ((0, "WP_FIST"), (1, "WP_PISTOL"), (8, "WP_SUPERSHOTGUN")):
+        if alias_weapons.get(slot) != want:
+            errs.append(f"weapon alias {slot} = {alias_weapons.get(slot)} != {want}")
+
+    # Cross-check DECOHack's aliases against dsda-doom's own enum names for
+    # the overlapping range. A mismatch means one of the two upstreams moved
+    # and the tables need review -- report, don't silently prefer either.
+    mismatch = []
+    for i, m in enumerate(mobjs):
+        slot = i + 1
+        dsda_name = m.get("name")
+        deco_name = alias_things.get(slot)
+        if deco_name and dsda_name and deco_name != dsda_name:
+            mismatch.append(f"slot {slot}: DECOHack={deco_name} dsda={dsda_name}")
+    if mismatch:
+        print(f"NOTE: {len(mismatch)} thing-name mismatch(es) between DECOHack "
+              f"and dsda-doom (DECOHack wins, as it defines the emitted names):",
+              file=sys.stderr)
+        for s in mismatch[:10]:
+            print("   ", s, file=sys.stderr)
+    if alias_dupes:
+        print(f"NOTE: {len(alias_dupes)} duplicate alias slot(s) upstream "
+              f"(first/lowest-tier name kept):", file=sys.stderr)
+        for slot, kept, skipped in alias_dupes[:10]:
+            print(f"    slot {slot}: kept {kept}, skipped {skipped}", file=sys.stderr)
+
     if errs:
         for e in errs: print("LANDMARK FAIL:", e, file=sys.stderr)
         sys.exit(1)
@@ -276,12 +455,18 @@ def main():
     json.dump(mobjs,   open(os.path.join(DATA, "mobjinfo.json"), "w"))
     json.dump(pointers, open(os.path.join(DATA, "pointers.json"), "w"), indent=1)
     json.dump(strings, open(os.path.join(DATA, "strings.json"), "w"))
+    json.dump(weaponinfo, open(os.path.join(DATA, "weaponinfo.json"), "w"))
+    json.dump({"things": {str(k): v for k, v in sorted(alias_things.items())},
+               "weapons": {str(k): v for k, v in sorted(alias_weapons.items())}},
+              open(os.path.join(DATA, "aliases.json"), "w"), indent=1)
     json.dump({"doom": {str(v): k[3:] for k, v in flag_bits.items()},
                "mbf21": {str(1 << i): n for i, n in enumerate(MBF21_THING_FLAGS)}},
               open(os.path.join(DATA, "flags.json"), "w"), indent=1)
 
     print(f"OK: {len(states)} states, {len(sprites)} sprites, {len(sounds)} sounds,")
-    print(f"    {len(mobjs)} things, {len(pointers)} pointers, {len(strings)} strings")
+    print(f"    {len(mobjs)} things, {len(pointers)} pointers, {len(strings)} strings,")
+    print(f"    {len(alias_things)} thing aliases, {len(alias_weapons)} weapon aliases,")
+    print(f"    {len(weaponinfo)} base weapons")
 
 if __name__ == "__main__":
     main()

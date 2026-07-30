@@ -10,7 +10,7 @@
 #     py doommake-tweak-script.py [-iwadpath "D:\path\to\doom2.wad"]
 #
 # The editable lists (file templates, entry deletions, append blocks) live in
-# the shared _dmake_settings.conf under the "tweak" section, alongside dmake
+# the shared __suite_settings.txt under the "tweak" section, alongside dmake
 # and doom.
 #
 # Template/conf SOURCE files are still resolved next to this script, since
@@ -356,7 +356,7 @@ def show_help():
     print(GRY("  - Template and conf source files are read from the folder"))
     print(GRY("    containing this tool."))
     print(GRY("  - The lists of templates, deletions and append blocks are edited"))
-    print(GRY("    in _dmake_settings.conf under the \"tweak\" section."))
+    print(GRY("    in __suite_settings.txt under the \"tweak\" section."))
     print(GRY("  - Normally run automatically by 'dmake create'."))
     print("")
 
