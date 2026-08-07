@@ -20,6 +20,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -142,11 +143,47 @@ def resolve_cmd(name):
     return None
 
 
+# Characters that cmd.exe treats specially when parsing a command line.
+# Windows filenames may legally contain ( ) & ^ ! , ; = + ' ` ~ [ ] @ # $ %
+# and spaces, so any of these in an argument must be quoted before a .bat or
+# .cmd file sees it. Python's subprocess only quotes for spaces and quotes,
+# which is why parentheses used to break through to cmd unprotected.
+_CMD_SPECIAL = re.compile(r"[ \t()&^!,;=+'`~\[\]@%<>|\"]")
+
+
+def quote_for_cmd(arg):
+    """Quote a single argument so cmd.exe passes it through verbatim to a
+    batch file. Returns the argument unchanged when nothing needs escaping."""
+    s = "" if arg is None else str(arg)
+    if s == "":
+        return '""'
+    if not _CMD_SPECIAL.search(s):
+        return s
+    # Windows filenames cannot contain a literal double quote, but guard
+    # anyway so a stray one can never terminate our quoting early.
+    return '"' + s.replace('"', '""') + '"'
+
+
+def build_batch_cmdline(path, args):
+    """Build a full `cmd.exe /s /c "..."` command line for a .bat/.cmd
+    target, with every token individually quoted.
+
+    /s makes cmd strip only the outermost pair of quotes and take the rest
+    of the line literally, so the inner per-argument quoting survives intact
+    and characters like ( ) are never parsed as cmd syntax."""
+    comspec = os.environ.get("COMSPEC") or "cmd.exe"
+    inner = " ".join([quote_for_cmd(path)] +
+                     [quote_for_cmd(a) for a in args])
+    return f'{quote_for_cmd(comspec)} /s /c "{inner}"'
+
+
 def run_cmd(name, args, feed=None):
     """Run an external command by name (resolved on PATH). .py files are
-    dispatched through the py launcher; everything else runs directly. If
-    `feed` is given it is piped to stdin. Returns the exit code, or 2 if
-    the tool cannot be found or launched."""
+    dispatched through the py launcher; .bat/.cmd files go through an
+    explicitly quoted cmd.exe /s /c line so special characters in filenames
+    survive; everything else runs directly. If `feed` is given it is piped
+    to stdin. Returns the exit code, or 2 if the tool cannot be found or
+    launched."""
     path = resolve_cmd(name)
     if not path:
         print(f"Error: '{name}' not found on PATH.")
@@ -155,8 +192,20 @@ def run_cmd(name, args, feed=None):
     if path.lower().endswith(".py"):
         launcher = resolve_cmd("py") or sys.executable
         cmd = [launcher, path] + list(args)
+    elif os.name == "nt" and path.lower().endswith((".bat", ".cmd")):
+        # A batch file is interpreted by cmd.exe, which re-parses the command
+        # line. Hand it a string we have quoted ourselves rather than letting
+        # subprocess build one (subprocess only quotes spaces and quotes, so
+        # parentheses and & ^ ! would reach cmd unprotected).
+        cmd = build_batch_cmdline(path, args)
     else:
         cmd = [path] + list(args)
+
+    # Always print the resolved command so failures are diagnosable.
+    if isinstance(cmd, str):
+        print(DGRY(f"  [cmd] {cmd}"))
+    else:
+        print(DGRY("  [cmd] " + " ".join(str(a) for a in cmd)))
 
     try:
         if feed is not None:
@@ -166,6 +215,9 @@ def run_cmd(name, args, feed=None):
         return r.returncode
     except FileNotFoundError:
         print(f"Error: could not launch '{name}' ({path}).")
+        return 2
+    except OSError as e:
+        print(f"Error: could not launch '{name}' ({path}): {e}")
         return 2
 
 
