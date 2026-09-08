@@ -40,12 +40,14 @@ from _suite_common import (
 SOURCE_PORTS = {}
 IWADS        = {}
 PAKS         = {}
-DEFAULT_PORT = "nyan"
-DEFAULT_IWAD = "doom2"
+DEFAULT_PORT     = "nyan"
+DEFAULT_PK3_PORT = "uz"
+DEFAULT_IWAD     = "doom2"
 
 
 def apply_settings():
-    global SOURCE_PORTS, IWADS, PAKS, DEFAULT_PORT, DEFAULT_IWAD
+    global SOURCE_PORTS, IWADS, PAKS
+    global DEFAULT_PORT, DEFAULT_PK3_PORT, DEFAULT_IWAD
 
     path, data = load_settings()
     require_sections(path, data, ("iwads", "source_ports", "paks", "defaults"))
@@ -67,6 +69,11 @@ def apply_settings():
     defaults     = data["defaults"]
     DEFAULT_PORT = str(defaults.get("run_port", "nyan"))
     DEFAULT_IWAD = str(defaults.get("run_iwad", "doom2"))
+
+    # Optional key. Absent from older __suite_settings.txt files, so it falls
+    # back rather than erroring; only consulted when a PK3 is loaded and no
+    # port was named on the CLI.
+    DEFAULT_PK3_PORT = str(defaults.get("run_pk3_port", "uz"))
 
 
 # ==============================================================================
@@ -243,7 +250,12 @@ def select_from_list_ascii(title, items, display_key="name"):
 
     rows = [str(it.get(display_key, "")) for it in items]
     max_item_len = max(len(r) for r in rows)
-    inner_w = max(max_item_len + 4, len(title) + 2)
+
+    # The footer hint is a fixed-width string that must never be clipped by
+    # the right border, so it participates in the width calculation alongside
+    # the items and the title. It is defined once here and reused below.
+    footer  = "  Up/Down: move   Enter: select   Esc: cancel"
+    inner_w = max(max_item_len + 4, len(title) + 2, len(footer) + 2)
 
     top    = "+" + ("-" * inner_w) + "+"
     sep    = "|" + ("-" * inner_w) + "|"
@@ -270,8 +282,7 @@ def select_from_list_ascii(title, items, display_key="name"):
                     fill_line(label, "white", "darkblue")
 
             fill_line("", "white", "darkblue")
-            fill_line("  Up/Down: move   Enter: select   Esc: cancel",
-                      "gray", "darkblue")
+            fill_line(footer, "gray", "darkblue")
             print(paint(bottom, "cyan", "darkblue"))
 
             key = _read_key()
@@ -447,10 +458,11 @@ def show_help():
     print(WHT("  - Selects an IWAD by keyword"))
     print(WHT("  - Expands pak sets (pak1, pak2, ...)"))
     print(WHT("  - In normal folders:"))
-    print(WHT("      * 1 WAD in folder -> auto loads it"))
-    print(WHT("      * >1 WADs -> ASCII menu to pick one (or [None])"))
+    print(WHT("      * 1 WAD or PK3 in folder -> auto loads it"))
+    print(WHT("      * >1 -> ASCII menu to pick one (or [None])"))
+    print(WHT("      * picking a PK3 switches to the PK3 default port (run_pk3_port)"))
     print(WHT("      * [None] -> no folder WAD is added; any CLI -file is used as-is"))
-    print(WHT("      * 0 WADs -> launches port + IWAD only"))
+    print(WHT("      * 0 files -> launches port + IWAD only"))
     print(WHT("  - In DoomMake project folders:"))
     print(WHT("      * uses doom-loader.conf to load ./build/<project>.wad"))
     print(WHT("      * optionally loads ./build/dehacked.wad (skips if missing)"))
@@ -524,7 +536,11 @@ def show_help():
     print(WHT("  1) source_ports : keyword -> exe path"))
     print(WHT("  2) iwads        : keyword -> iwad path"))
     print(WHT("  3) paks         : pakN    -> list of WAD paths"))
-    print(WHT("  4) defaults     : run_port / run_iwad"))
+    print(WHT("  4) defaults     : run_port / run_pk3_port / run_iwad"))
+    print("")
+    print(WHT("  run_pk3_port is the port used when the selected folder file is a"))
+    print(WHT("  .pk3 and no port was given on the command line. Defaults to 'uz'"))
+    print(WHT("  if the key is absent. An explicit CLI port always overrides it."))
     print("")
     print(WHT("  It is JSON, so backslashes in paths must be doubled:"))
     print(GRY('    "pak1": ['))
@@ -618,6 +634,34 @@ def scan_args(command_raw, swallow_menu=False):
     return state
 
 
+def apply_pk3_default_port(state, selected_path):
+    """PK3 default port.
+
+    If the file chosen from the folder (menu pick, or the sole file when
+    auto-loading) is a .pk3 AND the user did not name a port on the command
+    line, use defaults.run_pk3_port instead of defaults.run_port.
+
+    This only ever displaces the DEFAULT port. An explicit CLI port always
+    wins, so `doom helion` -> pick a pk3 still runs helion."""
+    if state["port_explicit"]:
+        return
+    if selected_path is None:
+        return
+    if not str(selected_path).lower().endswith(".pk3"):
+        return
+
+    key = DEFAULT_PK3_PORT
+    if key not in SOURCE_PORTS:
+        show_boxed_error([
+            f"-- Error : PK3 default port <{key}> is not a known port --",
+            "   Set 'run_pk3_port' under 'defaults' in __suite_settings.txt",
+        ])
+        sys.exit(1)
+
+    state["port_name"] = key
+    state["port"]      = SOURCE_PORTS[key]
+
+
 def validate_selection(state):
     validate_path(state["port"], "Source Port", state["port_name"])
     validate_path(state["iwad"], "IWAD", state["iwad_name"])
@@ -637,6 +681,15 @@ def main(argv):
     apply_settings()
 
     command_raw = list(argv)
+
+    # ---- Bare "--": strip unconditionally, before anything else --------------
+    # A lone "--" is a shell / CLI convention meaning "end of options". No Doom
+    # source port understands it, and nothing in this script needs it, so it is
+    # discarded up front. This makes the following equivalent:
+    #     doom -- -nosound   ==   doom -nosound
+    # Only an argument that is EXACTLY "--" is removed; "--add", "--skip",
+    # "--help" and "--listpaks" are untouched.
+    command_raw = [a for a in command_raw if str(a) != "--"]
 
     # ---- Help (early exit) ---------------------------------------------------
     help_tokens = ("--help", "-help", "/help", "help", "-h", "/?")
@@ -768,14 +821,13 @@ def run_doommake_mode(command_raw, cwd, skip_release):
 # ------------------------------------------------------------------------------
 def run_normal_mode(command_raw):
     state = scan_args(command_raw, swallow_menu=False)
-    validate_selection(state)
 
-    # WAD detection / selection in the current directory
+    # WAD / PK3 detection / selection in the current directory
     wad_path = os.getcwd()
     try:
         wad_files = sorted(
             (e for e in os.scandir(wad_path)
-             if e.is_file() and e.name.lower().endswith(".wad")),
+             if e.is_file() and e.name.lower().endswith((".wad", ".pk3"))),
             key=lambda e: e.name)
     except OSError:
         wad_files = []
@@ -787,13 +839,20 @@ def run_normal_mode(command_raw):
     elif len(wad_files) > 1:
         items = [{"name": e.name, "full_name": e.path} for e in wad_files]
         selected = select_from_list_ascii(
-            f"Select a WAD to run ( {wad_path} )", items, "name")
+            "Select a WAD or PK3 to run", items, "name")
         if selected is None:
             return 0
         if selected.get("__is_none"):
             wad_full_path = None
         else:
             wad_full_path = selected["full_name"]
+
+    # A PK3 swaps in the PK3 default port, unless a port was named on the CLI.
+    # This runs BEFORE validate_selection so the swapped-in port gets the same
+    # existence check as any other.
+    apply_pk3_default_port(state, wad_full_path)
+
+    validate_selection(state)
 
     filtered = state["filtered"]
 
