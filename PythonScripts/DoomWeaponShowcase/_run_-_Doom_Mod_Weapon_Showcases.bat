@@ -11,8 +11,10 @@ REM - 5 format fallbacks
 REM - Broken partials restart from zero
 REM - Terminal unavailable/no-format errors are detected BEFORE
 REM   wasting time on all 5 tiers
-REM - Unavailable/missing videos are shown in RED with a large
-REM   banner and recorded with a reason in _failed.log
+REM - Unavailable/missing videos are shown in a compact RED block
+REM   and recorded with a reason in _failed.log
+REM - Optional quality ceiling: -4k, -1440p, -1080p, -720p,
+REM   -480p, -360p. No option = best available.
 REM ============================================================
 
 set "URL=https://www.youtube.com/watch?v=6Mjr9hY0hYA&list=PLXKryJGC0Om3DIh90swKqtuxkXY4FbRz9"
@@ -25,6 +27,12 @@ set "RETRIES=5"
 set "DELAY_MIN=30"
 set "DELAY_RANGE=61"
 set "CHUNK=1M"
+
+REM -- optional quality ceiling ---------------------------------
+set "QUALITY=best"
+set "MAXH="
+call :parse_args %*
+if errorlevel 1 goto :bail
 
 REM -- ANSI colours (supported by normal modern Windows consoles)
 for /F "delims=" %%E in ('echo prompt $E^| cmd') do set "ESC=%%E"
@@ -67,6 +75,11 @@ echo   Delay       : %DELAY_MIN%-90 s between videos
 echo   Partials    : restart from zero
 echo   Cookies     : Firefox, refreshed per video/tier
 echo   Fallback    : 5 format tiers per video
+if defined MAXH (
+    echo   Quality     : up to !QUALITY! ^(falls down automatically^)
+) else (
+    echo   Quality     : best available
+)
 echo ========================================================
 echo.
 echo Make sure Firefox is logged into YouTube.
@@ -144,11 +157,19 @@ if "!TERMINAL!"=="1" (
     goto :video_wait
 )
 
-call :attempt "bv*+ba/bv*+b/b"                 "1/5  best available"
-call :attempt "bv*[vcodec^=vp9]+ba"            "2/5  force VP9"
-call :attempt "bv*[height<=1080][fps<=30]+ba"  "3/5  1080p30"
-call :attempt "bv*[height<=720]+ba"             "4/5  720p"
-call :attempt "b"                               "5/5  single stream"
+if defined MAXH (
+    call :attempt "bv*[height<=?!MAXH!]+ba/b[height<=?!MAXH!]"                 "1/5  best <= !QUALITY!"
+    call :attempt "bv*[height<=?!MAXH!][vcodec^=vp9]+ba/b[height<=?!MAXH!]"   "2/5  VP9 <= !QUALITY!"
+    call :attempt "bv*[height<=?!MAXH!][vcodec^=avc1]+ba/b[height<=?!MAXH!]"  "3/5  AVC <= !QUALITY!"
+    call :attempt "bv*[height<=?!MAXH!][fps<=30]+ba/b[height<=?!MAXH!]"       "4/5  30fps <= !QUALITY!"
+    call :attempt "b[height<=?!MAXH!]"                                       "5/5  single <= !QUALITY!"
+) else (
+    call :attempt "bv*+ba/bv*+b/b"                 "1/5  best available"
+    call :attempt "bv*[vcodec^=vp9]+ba"            "2/5  force VP9"
+    call :attempt "bv*[height<=1080][fps<=30]+ba"  "3/5  1080p30"
+    call :attempt "bv*[height<=720]+ba"             "4/5  720p"
+    call :attempt "b"                               "5/5  single stream"
+)
 
 if "!OK!"=="1" (
     set /a GOT+=1
@@ -184,7 +205,7 @@ yt-dlp.exe ^
     --cookies-from-browser firefox ^
     "https://www.youtube.com/watch?v=!VID!" > "!PROBE!" 2>&1
 
-REM Show probe output only when it contains a recognised problem.
+REM Probe output stays hidden; only our clean classified message is shown.
 findstr /I /C:"This video is private" /C:"Private video" "!PROBE!" >nul 2>&1
 if not errorlevel 1 (
     set "TERMINAL=1"
@@ -247,7 +268,6 @@ if "!TERMINAL!"=="0" (
     )
 )
 
-if "!TERMINAL!"=="1" type "!PROBE!"
 del "!PROBE!" >nul 2>&1
 goto :eof
 
@@ -256,12 +276,14 @@ REM report_unavailable
 REM ============================================================
 :report_unavailable
 echo.
-echo !RED!######################################################################!RESET!
-echo !RED!###  VIDEO MISSING / UNAVAILABLE / INACCESSIBLE                       ###!RESET!
-echo !RED!###  REASON: !WHY!!RESET!
-echo !RED!###  URL: https://www.youtube.com/watch?v=!VID!!RESET!
-echo !RED!###  SKIPPING ALL 5 FORMAT TIERS - THEY CANNOT FIX THIS CONDITION  ###!RESET!
-echo !RED!######################################################################!RESET!
+echo !RED!============================================================!RESET!
+echo !RED!  VIDEO UNAVAILABLE!RESET!
+echo !RED!------------------------------------------------------------!RESET!
+echo !RED!  ID     : !VID!!RESET!
+echo !RED!  Reason : !WHY!!RESET!
+echo !RED!  Action : skipped - format retries cannot fix availability!RESET!
+echo !RED!  URL    : https://www.youtube.com/watch?v=!VID!!RESET!
+echo !RED!============================================================!RESET!
 echo.
 >>"!FAILLOG!" echo [UNAVAILABLE] !VID! ^| !WHY! ^| https://www.youtube.com/watch?v=!VID!
 goto :eof
@@ -310,6 +332,67 @@ del "!PAD! - *.ytdl"     >nul 2>&1
 goto :eof
 
 REM ============================================================
+REM parse_args - optional resolution ceiling
+REM Examples: -4k  -1440p  -1080p  -720p  -480p  -360p
+REM No option (or -best) keeps the original best-quality behaviour.
+REM ============================================================
+:parse_args
+if "%~1"=="" exit /b 0
+
+if /I "%~1"=="-best" (
+    set "QUALITY=best"
+    set "MAXH="
+    shift
+    goto :parse_args
+)
+if /I "%~1"=="-4k" (
+    set "QUALITY=4K"
+    set "MAXH=2160"
+    shift
+    goto :parse_args
+)
+if /I "%~1"=="-2160p" (
+    set "QUALITY=2160p"
+    set "MAXH=2160"
+    shift
+    goto :parse_args
+)
+if /I "%~1"=="-1440p" (
+    set "QUALITY=1440p"
+    set "MAXH=1440"
+    shift
+    goto :parse_args
+)
+if /I "%~1"=="-1080p" (
+    set "QUALITY=1080p"
+    set "MAXH=1080"
+    shift
+    goto :parse_args
+)
+if /I "%~1"=="-720p" (
+    set "QUALITY=720p"
+    set "MAXH=720"
+    shift
+    goto :parse_args
+)
+if /I "%~1"=="-480p" (
+    set "QUALITY=480p"
+    set "MAXH=480"
+    shift
+    goto :parse_args
+)
+if /I "%~1"=="-360p" (
+    set "QUALITY=360p"
+    set "MAXH=360"
+    shift
+    goto :parse_args
+)
+
+echo [ERROR] Unknown option: %~1
+echo         Valid: -best -4k -2160p -1440p -1080p -720p -480p -360p
+exit /b 1
+
+REM ============================================================
 :wrap_up
 
 echo.
@@ -338,13 +421,10 @@ echo ========================================================
 
 if !UNAVAILABLE! GTR 0 (
     echo.
-    echo !RED!######################################################################!RESET!
-    echo !RED!###  UNAVAILABLE / MISSING VIDEOS: !UNAVAILABLE!RESET!
-    echo !RED!######################################################################!RESET!
-    for /f "usebackq tokens=*" %%U in ("!FAILLOG!") do (
-        echo %%U | findstr /L /B /C:"[UNAVAILABLE]" >nul
-        if not errorlevel 1 echo !RED!  %%U!RESET!
-    )
+    echo !RED!============================================================!RESET!
+    echo !RED!  UNAVAILABLE / MISSING VIDEOS : !UNAVAILABLE!!RESET!
+    echo !RED!  Details: !FAILLOG!!RESET!
+    echo !RED!============================================================!RESET!
 )
 
 if !FAILED! GTR 0 (
