@@ -77,11 +77,27 @@ CURVES = {
 M_RADIAL, M_BLEND, M_CUT, M_MIRROR, M_OFFSET = (
     "Radial mask", "Edge blend", "Edge cut", "Mirror", "Offset only")
 METHODS = [M_RADIAL, M_BLEND, M_CUT, M_MIRROR, M_OFFSET]
+R_BOTH, R_H, R_V = "Both", "Horizontal", "Vertical"
+REPEATS = [R_BOTH, R_H, R_V]
+
+
+def axes_of(repeat):
+    """(tile left/right?, tile up/down?) for a repeat setting."""
+    return repeat in (R_BOTH, R_H), repeat in (R_BOTH, R_V)
+
+
+def tile_reps(repeat, n):
+    """(rows, cols) repeats for a tiled preview/example."""
+    tx, ty = axes_of(repeat)
+    return (n if ty else 1), (n if tx else 1)
 OVERLAY_METHODS = (M_RADIAL, M_BLEND, M_CUT)
 
 DEFAULTS = {
     "method": M_CUT,
+    "repeat": R_BOTH,
     "crop_top": 0, "crop_bottom": 0, "crop_left": 0, "crop_right": 0,
+    # edge matching (pre-pass)
+    "match_edges": False, "match_smooth": 60, "match_strength": 100, "match_contrast": False,
     # radial
     "inner": 0.35, "outer": 0.95,
     "scatter": 0.15, "detail": 6, "seed": 1234,
@@ -102,6 +118,78 @@ ZOOMS = ["25%", "33%", "50%", "100%", "200%", "300%", "400%", "600%", "800%",
 VIEWS = ["tiled", "single", "original"]
 MAX_DISPLAY = 12000        # max displayed image dimension in pixels
 NO_CACHE_KEYS = ("nudge_x", "nudge_y")
+
+
+# ---------------------------------------------------------------- edge matching
+def _gauss_small(a, sigma):
+    """Separable gaussian on a (small) 2D float array, edge-padded."""
+    if sigma < 0.5:
+        return a
+    r = int(3 * sigma + 0.5)
+    x = np.arange(-r, r + 1, dtype=np.float32)
+    k = np.exp(-x * x / (2 * sigma * sigma))
+    k /= k.sum()
+    h, w = a.shape
+    p = np.pad(a, ((r, r), (0, 0)), mode="edge")
+    out = np.zeros_like(a)
+    for i, kv in enumerate(k):
+        out += kv * p[i:i + h]
+    p = np.pad(out, ((0, 0), (r, r)), mode="edge")
+    out2 = np.zeros_like(a)
+    for i, kv in enumerate(k):
+        out2 += kv * p[:, i:i + w]
+    return out2
+
+
+def blur_f(a, sigma):
+    """Large-radius gaussian blur of a 2D float array (downsample, blur, upsample)."""
+    h, w = a.shape
+    k = max(1, int(sigma / 4))
+    sw, sh = max(1, round(w / k)), max(1, round(h / k))
+    small = np.asarray(Image.fromarray(a.astype(np.float32)).resize((sw, sh), RS.BOX), np.float32)
+    small = _gauss_small(small, sigma / k)
+    return np.asarray(Image.fromarray(small).resize((w, h), RS.BICUBIC), np.float32)
+
+
+def edge_match(O, smooth, strength, contrast, tx, ty):
+    """Shift broad brightness/colour (and optionally contrast) with a gentle ramp
+    across the image so opposite edges match. The centre line is unchanged and
+    detail is never blurred - only low-frequency levels move."""
+    a = O.astype(np.float32)
+    cc = min(3, a.shape[2])                      # never touch alpha
+    st = max(0.0, min(100.0, float(strength))) / 100.0
+    smooth = max(2.0, float(smooth))
+    for axis, on in ((1, tx), (0, ty)):
+        if not on:
+            continue
+        H, W = a.shape[:2]
+        n = W if axis == 1 else H
+        if n < 8:
+            continue
+        band = max(2, min(n // 4, int(smooth / 3)))
+        B = np.stack([blur_f(a[..., c], smooth) for c in range(cc)], axis=-1)
+        ramp = (np.arange(n, dtype=np.float32) / (n - 1) - 0.5)
+        if axis == 1:
+            d = (B[:, :band].mean(axis=1) - B[:, -band:].mean(axis=1)) * st     # H x cc
+        else:
+            d = (B[:band].mean(axis=0) - B[-band:].mean(axis=0)) * st           # W x cc
+
+        if contrast:
+            D = (a[..., :cc] - B).mean(axis=-1)
+            S = np.sqrt(np.maximum(blur_f(D * D, smooth), 1e-4))
+            if axis == 1:
+                lg = (np.log(S[:, :band].mean(axis=1)) - np.log(S[:, -band:].mean(axis=1))) * st
+                gain = np.exp(lg[:, None] * ramp[None, :])
+            else:
+                lg = (np.log(S[:band].mean(axis=0)) - np.log(S[-band:].mean(axis=0))) * st
+                gain = np.exp(ramp[:, None] * lg[None, :])
+            a[..., :cc] = B + (a[..., :cc] - B) * gain[..., None]
+
+        if axis == 1:
+            a[..., :cc] += d[:, None, :] * ramp[None, :, None]
+        else:
+            a[..., :cc] += d[None, :, :] * ramp[:, None, None]
+    return np.clip(a + 0.5, 0, 255).astype(np.uint8)
 
 
 # ---------------------------------------------------------------- radial mask
@@ -125,12 +213,18 @@ def smooth_noise(h, w, detail, seed):
     return total / peak
 
 
-def build_mask(h, w, inner, outer, scatter, detail, seed, curve, hard):
-    """1.0 = keep original, 0.0 = use offset copy. Always 0 on the border."""
+def build_mask(h, w, inner, outer, scatter, detail, seed, curve, hard, tx=True, ty=True):
+    """1.0 = keep original, 0.0 = use offset copy. Always 0 on the repeating borders.
+    One axis only: the circle becomes a band across the image."""
     ys = (np.arange(h, dtype=np.float32) + 0.5 - h / 2.0) / (h / 2.0)
     xs = (np.arange(w, dtype=np.float32) + 0.5 - w / 2.0) / (w / 2.0)
     dy, dx = np.meshgrid(ys, xs, indexing="ij")
-    r = np.sqrt(dx * dx + dy * dy)
+    if tx and ty:
+        r = np.sqrt(dx * dx + dy * dy)
+    elif tx:
+        r = np.abs(dx)
+    else:
+        r = np.abs(dy)
     if scatter > 0:
         r = r + float(scatter) * smooth_noise(h, w, detail, seed)
     if outer <= inner:
@@ -143,8 +237,16 @@ def build_mask(h, w, inner, outer, scatter, detail, seed, curve, hard):
     xx = np.arange(w)
     ey = np.minimum(yy, h - 1 - yy)[:, None]
     ex = np.minimum(xx, w - 1 - xx)[None, :]
-    e = np.minimum(ey, ex).astype(np.float32)
-    guard_px = max(2.0, GUARD_FRAC * min(h, w) / 2.0)
+    if tx and ty:
+        e = np.minimum(ey, ex).astype(np.float32)
+        span = min(h, w)
+    elif tx:
+        e = np.broadcast_to(ex, (h, w)).astype(np.float32)
+        span = w
+    else:
+        e = np.broadcast_to(ey, (h, w)).astype(np.float32)
+        span = h
+    guard_px = max(2.0, GUARD_FRAC * span / 2.0)
     g = np.clip(e / guard_px, 0.0, 1.0)
     g = g * g * (3.0 - 2.0 * g)
     m = m * g
@@ -156,13 +258,14 @@ def build_mask(h, w, inner, outer, scatter, detail, seed, curve, hard):
 
 def method_radial(O, s):
     h, w = O.shape[:2]
-    cx = max(-(w // 2), min(w // 2, int(s["center_x"])))
-    cy = max(-(h // 2), min(h // 2, int(s["center_y"])))
+    tx, ty = axes_of(s["repeat"])
+    cx = max(-(w // 2), min(w // 2, int(s["center_x"]))) if tx else 0
+    cy = max(-(h // 2), min(h // 2, int(s["center_y"]))) if ty else 0
     if cx or cy:
         O = np.roll(O, (-cy, -cx), axis=(0, 1))
-    S = np.roll(O, (h // 2, w // 2), axis=(0, 1))
+    S = np.roll(O, (h // 2 if ty else 0, w // 2 if tx else 0), axis=(0, 1))
     m = build_mask(h, w, float(s["inner"]), float(s["outer"]), float(s["scatter"]),
-                   int(s["detail"]), int(s["seed"]), s["curve"], bool(s["hard"]))
+                   int(s["detail"]), int(s["seed"]), s["curve"], bool(s["hard"]), tx, ty)
     if s["hard"]:
         out = np.where(m[..., None] >= 0.5, O, S)
     else:
@@ -190,8 +293,9 @@ def _blend_pass(A, k, curve):
 
 def method_edge_blend(O, s):
     h, w = O.shape[:2]
-    kx = max(0, min(int(s["blend_overlap_x"]), (w - 1) // 2))
-    ky = max(0, min(int(s["blend_overlap_y"]), (h - 1) // 2))
+    tx, ty = axes_of(s["repeat"])
+    kx = max(0, min(int(s["blend_overlap_x"]), (w - 1) // 2)) if tx else 0
+    ky = max(0, min(int(s["blend_overlap_y"]), (h - 1) // 2)) if ty else 0
     A = O
     cw = np.ones(w, np.float32)
     rw = np.ones(h, np.float32)
@@ -268,8 +372,9 @@ def _cut_pass(A, k, wrap):
 
 def method_edge_cut(O, s):
     h, w = O.shape[:2]
-    kx = max(0, min(int(s["cut_overlap_x"]), (w - 1) // 2, CUT_MAX))
-    ky = max(0, min(int(s["cut_overlap_y"]), (h - 1) // 2, CUT_MAX))
+    tx, ty = axes_of(s["repeat"])
+    kx = max(0, min(int(s["cut_overlap_x"]), (w - 1) // 2, CUT_MAX)) if tx else 0
+    ky = max(0, min(int(s["cut_overlap_y"]), (h - 1) // 2, CUT_MAX)) if ty else 0
     A = O
     m = np.ones((h, w), np.float32)
     if kx >= 2:
@@ -288,14 +393,17 @@ def method_edge_cut(O, s):
 
 # ---------------------------------------------------------------- simple methods
 def method_mirror(O, s):
-    top = np.concatenate([O, O[:, ::-1]], axis=1)
-    out = np.concatenate([top, top[::-1]], axis=0)
+    tx, ty = axes_of(s["repeat"])
+    out = np.concatenate([O, O[:, ::-1]], axis=1) if tx else O
+    if ty:
+        out = np.concatenate([out, out[::-1]], axis=0)
     return np.ascontiguousarray(out), np.ones(out.shape[:2], np.float32)
 
 
 def method_offset(O, s):
     h, w = O.shape[:2]
-    out = np.roll(O, (h // 2, w // 2), axis=(0, 1))
+    tx, ty = axes_of(s["repeat"])
+    out = np.roll(O, (h // 2 if ty else 0, w // 2 if tx else 0), axis=(0, 1))
     return out, np.ones((h, w), np.float32)
 
 
@@ -328,6 +436,10 @@ class Engine:
             if t + b > H - 4 or l + r > W - 4:
                 raise ValueError("Crop leaves less than 4 pixels")
             O = src[t:H - b, l:W - r]
+            if s["match_edges"]:
+                tx, ty = axes_of(s["repeat"])
+                O = edge_match(O, s["match_smooth"], s["match_strength"],
+                               bool(s["match_contrast"]), tx, ty)
             func = METHOD_FUNCS.get(s["method"], method_radial)
             self._res = func(O, s)
             self._key = key
@@ -375,10 +487,22 @@ HELP_TEXT = [
          "Everything updates live as you change settings."),
     ("h1", "Workflow"),
     ("", "1. Open an image (Ctrl+O, or drag it onto seamtile.bat).\n"
-         "2. Crop away any bad edges, vignetting or borders.\n"
+         "2. Crop away any bad edges, vignetting or borders. If the tiles show light/dark "
+         "bands, tick Match edges.\n"
          "3. Pick a method and adjust its options while watching the Tiled view.\n"
          "4. Nudge the tile so the part you care about sits where you want it.\n"
          "5. Save (Ctrl+S)."),
+    ("h1", "Match edges"),
+    ("", "Fixes tiles that show light/dark bands because the photo's lighting is uneven "
+         "(e.g. bright on one side, dark on the other). It measures the broad brightness and "
+         "colour along opposite edges and adds a gentle ramp across the image so they meet. "
+         "Detail is never blurred; only overall levels shift, and the centre line is unchanged. "
+         "Runs after Crop and before the method, and follows the Repeat setting."),
+    ("", "Smoothness - how broad the measured lighting is (blur radius in pixels). Higher "
+         "corrects only large-scale lighting; too low starts reacting to individual details.\n"
+         "Strength % - how much of the correction is applied.\n"
+         "Also match contrast - evens out haze / washed-out areas too, by scaling detail "
+         "contrast so opposite edges match."),
     ("h1", "Methods"),
     ("h2", "Edge cut (default)"),
     ("", "Keeps the image where it is. A band along each edge is overlapped with the band "
@@ -414,7 +538,19 @@ HELP_TEXT = [
     ("h2", "Offset only"),
     ("", "Shifts the image by half its size and repairs nothing. The seams end up as a cross "
          "through the middle, ready to fix by hand in a paint program. No options."),
+    ("h1", "Repeat"),
+    ("", "Both - the tile repeats left-right and up-down (default).\n"
+         "Horizontal - only the left and right edges are joined; top and bottom are left as "
+         "they are. Good for trims and strips.\n"
+         "Vertical - only the top and bottom edges are joined.\n"
+         "Each method repairs only the chosen direction (Radial mask uses a band instead of a "
+         "circle; Mirror flips one way; Offset shifts one way). Options for the unused "
+         "direction are hidden, but their values are kept. The Tiled view and the saved "
+         "_3x3.png example repeat only in the chosen direction. Nudge works in both directions."),
     ("h1", "Shared settings"),
+    ("", "Most numbers have a slider and a spinner - drag the slider, or type / click the "
+         "spinner for exact values. Slider ranges adapt to the loaded image. "
+         "The mouse wheel scrolls the settings panel if it is taller than the window."),
     ("", "Crop - pixels removed from each side before anything else happens. Shown as a dashed "
          "box in the Original view.\n"
          "Nudge X / Y - slides the finished tile around with wraparound, to re-centre it. "
@@ -431,7 +567,7 @@ HELP_TEXT = [
     ("h1", "Files"),
     ("", "Save writes three files next to the source image:\n"
          "  name_tile.png - the finished tile\n"
-         "  name_3x3.png - a 3x3 tiled example\n"
+         "  name_3x3.png - a 3x3 tiled example (3x1 / 1x3 strip for one-direction repeat)\n"
          "  name_tile.json - every setting, reloaded automatically when you open that image again\n"
          "Save as - choose a different name or folder; the json is still written alongside.\n"
          "Save settings / Load settings - store or apply all settings on their own. "
@@ -466,6 +602,9 @@ class App(tk.Tk):
         self._geom = None          # (ox, oy, zoom, region_w, region_h) of last render
         self._last = dict(DEFAULTS, **VIEW_DEFAULTS)
         self._help_win = None
+        self.sliders = {}
+        self._ranges = {}
+        self._syncing = False
 
         self.v = {}
         for k, d in list(DEFAULTS.items()) + list(VIEW_DEFAULTS.items()):
@@ -477,12 +616,14 @@ class App(tk.Tk):
                 var = tk.DoubleVar(value=d)
             else:
                 var = tk.StringVar(value=d)
-            var.trace_add("write", lambda *_: self.schedule())
+            var.trace_add("write", lambda *_, n=k: (self._sync_slider(n), self.schedule()))
             self.v[k] = var
         self.v["seed"].set(random.randint(0, 99999))
 
         self._build_ui()
         self.v["method"].trace_add("write", lambda *_: self._update_method_ui())
+        self.v["repeat"].trace_add("write", lambda *_: self._update_method_ui())
+        self.v["match_edges"].trace_add("write", lambda *_: self._update_method_ui())
         self._update_method_ui()
         self._bind_keys()
 
@@ -499,8 +640,19 @@ class App(tk.Tk):
         except tk.TclError:
             pass
 
-        panel = ttk.Frame(self, padding=6)
-        panel.pack(side="left", fill="y")
+        outer = ttk.Frame(self)
+        outer.pack(side="left", fill="y")
+        pc = tk.Canvas(outer, highlightthickness=0, width=10)
+        psb = ttk.Scrollbar(outer, orient="vertical", command=pc.yview)
+        pc.configure(yscrollcommand=psb.set)
+        pc.pack(side="left", fill="y")
+        psb.pack(side="left", fill="y")
+        panel = ttk.Frame(pc, padding=6)
+        pc.create_window((0, 0), window=panel, anchor="nw")
+        panel.bind("<Configure>", lambda e: pc.configure(scrollregion=pc.bbox("all"),
+                                                          width=panel.winfo_reqwidth()))
+        self._panel_canvas = pc
+        self.bind_all("<MouseWheel>", self._on_panel_wheel, add="+")
         right = ttk.Frame(self)
         right.pack(side="left", fill="both", expand=True)
 
@@ -521,16 +673,34 @@ class App(tk.Tk):
         # --- crop
         f = ttk.LabelFrame(panel, text="Crop (pixels)", padding=4)
         f.pack(fill="x", pady=(0, 6))
-        self._spin(f, 0, 0, "Top", "crop_top", 0, 8192, 1)
-        self._spin(f, 0, 2, "Bottom", "crop_bottom", 0, 8192, 1)
-        self._spin(f, 1, 0, "Left", "crop_left", 0, 8192, 1)
-        self._spin(f, 1, 2, "Right", "crop_right", 0, 8192, 1)
+        self._row(f, 0, "Top", "crop_top", 0, 512, 1)
+        self._row(f, 1, "Bottom", "crop_bottom", 0, 512, 1)
+        self._row(f, 2, "Left", "crop_left", 0, 512, 1)
+        self._row(f, 3, "Right", "crop_right", 0, 512, 1)
+
+        # --- edge matching
+        f = ttk.LabelFrame(panel, text="Match edges", padding=4)
+        f.pack(fill="x", pady=(0, 6))
+        ttk.Checkbutton(f, text="Match edge brightness / colour",
+                        variable=self.v["match_edges"]).grid(row=0, column=0, columnspan=3, sticky="w")
+        self.match_widgets = []
+        self.match_widgets += self._row(f, 1, "Smoothness", "match_smooth", 5, 300, 1)
+        self.match_widgets += self._row(f, 2, "Strength %", "match_strength", 0, 100, 1)
+        cb = ttk.Checkbutton(f, text="Also match contrast (haze)", variable=self.v["match_contrast"])
+        cb.grid(row=3, column=0, columnspan=3, sticky="w")
+        self.match_widgets.append(cb)
 
         # --- method
         f = ttk.LabelFrame(panel, text="Method", padding=4)
         f.pack(fill="x", pady=(0, 6))
         ttk.Combobox(f, textvariable=self.v["method"], values=METHODS,
                      state="readonly", width=18).pack(anchor="w", fill="x")
+        rf = ttk.Frame(f)
+        rf.pack(fill="x", pady=(4, 0))
+        ttk.Label(rf, text="Repeat").pack(side="left", padx=(2, 6))
+        ttk.Combobox(rf, textvariable=self.v["repeat"], values=REPEATS,
+                     state="readonly", width=12).pack(side="left")
+        self.axis_widgets = {"x": [], "y": []}
         self.method_box = ttk.Frame(f)
         self.method_box.pack(fill="x", pady=(4, 0))
         self.mframes = {}
@@ -538,14 +708,13 @@ class App(tk.Tk):
         # radial
         fr = ttk.Frame(self.method_box)
         self.mframes[M_RADIAL] = fr
-        self._spin(fr, 0, 0, "Inner radius", "inner", 0.0, 1.5, 0.01, fmt="%.2f")
-        self._spin(fr, 1, 0, "Outer radius", "outer", 0.0, 1.6, 0.01, fmt="%.2f")
-        self._spin(fr, 2, 0, "Scatter", "scatter", 0.0, 0.6, 0.01, fmt="%.2f")
-        self._spin(fr, 3, 0, "Scatter detail", "detail", 1, 64, 1)
-        self._spin(fr, 4, 0, "Seed", "seed", 0, 99999, 1)
-        ttk.Button(fr, text="Re-roll", width=8,
-                   command=lambda: self.v["seed"].set(random.randint(0, 99999))
-                   ).grid(row=4, column=2, padx=(4, 0), sticky="w")
+        self._row(fr, 0, "Inner radius", "inner", 0.0, 1.5, 0.01, fmt="%.2f")
+        self._row(fr, 1, "Outer radius", "outer", 0.0, 1.6, 0.01, fmt="%.2f")
+        self._row(fr, 2, "Scatter", "scatter", 0.0, 0.6, 0.01, fmt="%.2f")
+        self._row(fr, 3, "Scatter detail", "detail", 1, 64, 1)
+        reroll = ttk.Button(fr, text="Re-roll", width=8,
+                            command=lambda: self.v["seed"].set(random.randint(0, 99999)))
+        self._row(fr, 4, "Seed", "seed", 0, 99999, 1, slider=False, middle=reroll)
         ttk.Label(fr, text="Curve").grid(row=5, column=0, sticky="w", padx=(2, 6), pady=1)
         ttk.Combobox(fr, textvariable=self.v["curve"], values=list(CURVES.keys()),
                      state="readonly", width=12).grid(row=5, column=1, columnspan=2, sticky="w", pady=1)
@@ -553,20 +722,18 @@ class App(tk.Tk):
                         variable=self.v["hard"]).grid(row=6, column=0, columnspan=3, sticky="w", pady=(3, 0))
         ttk.Label(fr, text="Mask centre (which part of the source is kept)",
                   foreground="#666").grid(row=7, column=0, columnspan=3, sticky="w", pady=(6, 0))
-        sub = ttk.Frame(fr)
-        sub.grid(row=8, column=0, columnspan=3, sticky="w")
-        self._spin(sub, 0, 0, "X", "center_x", -4096, 4096, 1)
-        self._spin(sub, 0, 2, "Y", "center_y", -4096, 4096, 1)
+        self._row(fr, 8, "Centre X", "center_x", -256, 256, 1, axis="x")
+        self._row(fr, 9, "Centre Y", "center_y", -256, 256, 1, axis="y")
 
         # edge blend
         fb = ttk.Frame(self.method_box)
         self.mframes[M_BLEND] = fb
-        self._spin(fb, 0, 0, "Overlap X", "blend_overlap_x", 0, 2048, 1)
-        self._spin(fb, 1, 0, "Overlap Y", "blend_overlap_y", 0, 2048, 1)
+        self._row(fb, 0, "Overlap X", "blend_overlap_x", 0, 128, 1, axis="x")
+        self._row(fb, 1, "Overlap Y", "blend_overlap_y", 0, 128, 1, axis="y")
         ttk.Label(fb, text="Curve").grid(row=2, column=0, sticky="w", padx=(2, 6), pady=1)
         ttk.Combobox(fb, textvariable=self.v["blend_curve"], values=list(CURVES.keys()),
-                     state="readonly", width=12).grid(row=2, column=1, sticky="w", pady=1)
-        ttk.Label(fb, foreground="#666", wraplength=230, justify="left",
+                     state="readonly", width=12).grid(row=2, column=1, columnspan=2, sticky="w", pady=1)
+        ttk.Label(fb, foreground="#666", wraplength=280, justify="left",
                   text="Edge bands are faded into the opposite side. "
                        "Tile shrinks by the overlap. 0 = leave that axis alone."
                   ).grid(row=3, column=0, columnspan=3, sticky="w", pady=(4, 0))
@@ -574,9 +741,9 @@ class App(tk.Tk):
         # edge cut
         fc = ttk.Frame(self.method_box)
         self.mframes[M_CUT] = fc
-        self._spin(fc, 0, 0, "Overlap X", "cut_overlap_x", 0, CUT_MAX, 1)
-        self._spin(fc, 1, 0, "Overlap Y", "cut_overlap_y", 0, CUT_MAX, 1)
-        ttk.Label(fc, foreground="#666", wraplength=230, justify="left",
+        self._row(fc, 0, "Overlap X", "cut_overlap_x", 0, CUT_MAX, 1, axis="x")
+        self._row(fc, 1, "Overlap Y", "cut_overlap_y", 0, CUT_MAX, 1, axis="y")
+        ttk.Label(fc, foreground="#666", wraplength=280, justify="left",
                   text=f"Edge bands are joined along the best-matching cut line. "
                        f"No pixel mixing. Tile shrinks by the overlap. "
                        f"2-{CUT_MAX} px; below 2 leaves that axis alone."
@@ -585,24 +752,25 @@ class App(tk.Tk):
         # mirror / offset
         fm = ttk.Frame(self.method_box)
         self.mframes[M_MIRROR] = fm
-        ttk.Label(fm, foreground="#666", wraplength=230, justify="left",
-                  text="No options. The image is flipped into a 2x2 mirrored "
-                       "tile - seamless, but symmetric, and double the size."
+        ttk.Label(fm, foreground="#666", wraplength=280, justify="left",
+                  text="No options. The image is flipped into a mirrored tile - "
+                       "seamless, but symmetric, and double the size in each "
+                       "repeating direction."
                   ).pack(anchor="w")
         fo = ttk.Frame(self.method_box)
         self.mframes[M_OFFSET] = fo
-        ttk.Label(fo, foreground="#666", wraplength=230, justify="left",
-                  text="No options. Half-offset only: the seams end up as a cross "
-                       "through the middle, ready to fix by hand."
+        ttk.Label(fo, foreground="#666", wraplength=280, justify="left",
+                  text="No options. Half-offset only: the seams end up through "
+                       "the middle, ready to fix by hand."
                   ).pack(anchor="w")
 
         # --- position
         f = ttk.LabelFrame(panel, text="Nudge (wrap-shift the tile; arrow keys)", padding=4)
         f.pack(fill="x", pady=(0, 6))
-        self._spin(f, 0, 0, "X", "nudge_x", -8192, 8192, 1)
-        self._spin(f, 0, 2, "Y", "nudge_y", -8192, 8192, 1)
+        self._row(f, 0, "X", "nudge_x", -256, 256, 1)
+        self._row(f, 1, "Y", "nudge_y", -256, 256, 1)
         ttk.Button(f, text="Reset positions", command=self.reset_positions
-                   ).grid(row=1, column=0, columnspan=4, sticky="ew", pady=(4, 0))
+                   ).grid(row=2, column=0, columnspan=3, sticky="ew", pady=(4, 0))
 
         # --- view
         f = ttk.LabelFrame(panel, text="View", padding=4)
@@ -658,14 +826,103 @@ class App(tk.Tk):
         c.bind("<Control-MouseWheel>", lambda e: c.yview_scroll(-int(e.delta / 120), "units"))
         c.bind("<Configure>", lambda e: self.schedule())
 
-    def _spin(self, parent, row, col, label, name, frm, to, inc, fmt=None):
-        ttk.Label(parent, text=label).grid(row=row, column=col, sticky="w", padx=(2, 6), pady=1)
-        kw = dict(from_=frm, to=to, increment=inc, textvariable=self.v[name], width=7)
+    def _row(self, parent, row, label, name, frm, to, inc, fmt=None,
+             slider=True, middle=None, axis=None):
+        """label | slider (or middle widget) | spinbox, all bound to self.v[name]."""
+        widgets = []
+        lbl = ttk.Label(parent, text=label)
+        lbl.grid(row=row, column=0, sticky="w", padx=(2, 6), pady=1)
+        widgets.append(lbl)
+        if slider:
+            sc = ttk.Scale(parent, from_=frm, to=to, orient="horizontal", length=150,
+                           command=lambda v, n=name, i=inc: self._from_slider(n, v, i))
+            sc.grid(row=row, column=1, sticky="ew", pady=1)
+            self.sliders[name] = sc
+            self._ranges[name] = (frm, to)
+            widgets.append(sc)
+            self._sync_slider(name)
+        elif middle is not None:
+            middle.grid(row=row, column=1, sticky="w", pady=1)
+            widgets.append(middle)
+        kw = dict(from_=-1e9 if frm < 0 else 0, to=1e9 if slider else to,
+                  increment=inc, textvariable=self.v[name], width=7)
         if fmt:
             kw["format"] = fmt
         sb = ttk.Spinbox(parent, **kw)
-        sb.grid(row=row, column=col + 1, sticky="w", pady=1, padx=(0, 6))
-        return sb
+        sb.grid(row=row, column=2, sticky="w", pady=1, padx=(6, 0))
+        widgets.append(sb)
+        if axis:
+            self.axis_widgets[axis] += widgets
+        return widgets
+
+    def _from_slider(self, name, value, inc):
+        if self._syncing:
+            return
+        val = float(value)
+        if isinstance(DEFAULTS[name], int) and not isinstance(DEFAULTS[name], bool):
+            val = int(round(val))
+        else:
+            val = round(round(val / inc) * inc, 4)
+        try:
+            cur = self.v[name].get()
+        except (tk.TclError, ValueError):
+            cur = None
+        if cur != val:
+            self.v[name].set(val)
+
+    def _sync_slider(self, name):
+        sc = self.sliders.get(name) if hasattr(self, "sliders") else None
+        if sc is None:
+            return
+        try:
+            val = float(self.v[name].get())
+        except (tk.TclError, ValueError):
+            return
+        self._syncing = True
+        try:
+            sc.set(val)
+        finally:
+            self._syncing = False
+
+    def _update_ranges(self):
+        """Fit slider ranges to the loaded image / current tile."""
+        if self.src is None or self.tile is None:
+            return
+        H, W = self.src.shape[:2]
+        s = self.settings()
+        cw = max(4, W - int(s["crop_left"]) - int(s["crop_right"]))
+        ch = max(4, H - int(s["crop_top"]) - int(s["crop_bottom"]))
+        th, tw = self.tile.shape[:2]
+        rng = {
+            "crop_top": (0, H - 5), "crop_bottom": (0, H - 5),
+            "crop_left": (0, W - 5), "crop_right": (0, W - 5),
+            "nudge_x": (-tw, tw), "nudge_y": (-th, th),
+            "center_x": (-(cw // 2), cw // 2), "center_y": (-(ch // 2), ch // 2),
+            "blend_overlap_x": (0, max(1, (cw - 1) // 2)),
+            "blend_overlap_y": (0, max(1, (ch - 1) // 2)),
+            "cut_overlap_x": (0, max(2, min(CUT_MAX, (cw - 1) // 2))),
+            "cut_overlap_y": (0, max(2, min(CUT_MAX, (ch - 1) // 2))),
+        }
+        for k, (lo, hi) in rng.items():
+            sc = self.sliders.get(k)
+            if sc is not None and self._ranges.get(k) != (lo, hi):
+                self._syncing = True
+                try:
+                    sc.configure(from_=lo, to=hi)
+                finally:
+                    self._syncing = False
+                self._ranges[k] = (lo, hi)
+                self._sync_slider(k)
+
+    def _on_panel_wheel(self, e):
+        """Mouse wheel over the settings panel scrolls it."""
+        w = self.winfo_containing(e.x_root, e.y_root)
+        pc = getattr(self, "_panel_canvas", None)
+        if w is None or pc is None or not str(w).startswith(str(pc)):
+            return
+        if isinstance(w, (ttk.Spinbox, ttk.Combobox)):
+            return
+        pc.yview_scroll(-int(e.delta / 120), "units")
 
     def _update_method_ui(self):
         method = self.g("method")
@@ -674,6 +931,18 @@ class App(tk.Tk):
         for fr in self.mframes.values():
             fr.pack_forget()
         self.mframes[method].pack(fill="x")
+        for wdg in self.match_widgets:
+            if self.g("match_edges"):
+                wdg.grid()
+            else:
+                wdg.grid_remove()
+        tx, ty = axes_of(self.g("repeat"))
+        for axis, on in (("x", tx), ("y", ty)):
+            for wdg in self.axis_widgets[axis]:
+                if on:
+                    wdg.grid()
+                else:
+                    wdg.grid_remove()
         if method in OVERLAY_METHODS:
             text = {M_RADIAL: "Mask overlay (red = offset copy)",
                     M_BLEND: "Overlay (red = faded from opposite side)",
@@ -790,12 +1059,15 @@ class App(tk.Tk):
         # older files have no method; unknown methods fall back too
         if data.get("method") not in METHODS:
             self.v["method"].set(M_RADIAL)
+        if data.get("repeat") not in REPEATS:
+            self.v["repeat"].set(R_BOTH)
 
     def reset_settings(self):
-        seed, method = self.g("seed"), self.g("method")
+        seed, method, repeat = self.g("seed"), self.g("method"), self.g("repeat")
         self.apply_settings(DEFAULTS)
         self.v["seed"].set(seed)
         self.v["method"].set(method)
+        self.v["repeat"].set(repeat)
 
     def reset_positions(self):
         for k in ("center_x", "center_y", "nudge_x", "nudge_y"):
@@ -834,8 +1106,8 @@ class App(tk.Tk):
         h, w = self.tile.shape[:2]
         if view == "single":
             return w, h
-        n = int(self.g("tiles"))
-        return w * n, h * n
+        ry, rx = tile_reps(self.g("repeat"), int(self.g("tiles")))
+        return w * rx, h * ry
 
     # ------------------------------------------------------------ file ops
     def open_dialog(self):
@@ -922,7 +1194,8 @@ class App(tk.Tk):
                 return
         try:
             Image.fromarray(self.tile).save(p_tile)
-            Image.fromarray(np.tile(self.tile, (3, 3, 1))).save(p_3x3)
+            ry, rx = tile_reps(self.g("repeat"), 3)
+            Image.fromarray(np.tile(self.tile, (ry, rx, 1))).save(p_3x3)
             with open(p_json, "w", encoding="utf-8") as fh:
                 json.dump(self._settings_doc(), fh, indent=2)
         except Exception as ex:
@@ -988,9 +1261,10 @@ class App(tk.Tk):
             self.status.set(str(ex))
             return
 
+        self._update_ranges()
         method = s["method"]
         view = s["view"]
-        n = int(s["tiles"])
+        ry, rx = tile_reps(s["repeat"], int(s["tiles"]))
         th, tw = self.tile.shape[:2]
 
         if view == "original":
@@ -1000,7 +1274,7 @@ class App(tk.Tk):
             if s["overlay"] and method in OVERLAY_METHODS:
                 arr = apply_overlay(arr, self.tile_mask)
             if view == "tiled":
-                arr = np.tile(arr, (n, n, 1))
+                arr = np.tile(arr, (ry, rx, 1))
 
         h, w = arr.shape[:2]
         zoom = self._zoom_factor(s["zoom"])
@@ -1022,10 +1296,11 @@ class App(tk.Tk):
 
         if s["seams"]:
             if view == "tiled":
-                for k in range(1, n):
+                for k in range(1, rx):
                     x = ox + k * tw * zoom
-                    y = oy + k * th * zoom
                     c.create_line(x, oy, x, oy + ih, fill="#00e5ff", dash=(4, 4))
+                for k in range(1, ry):
+                    y = oy + k * th * zoom
                     c.create_line(ox, y, ox + iw, y, fill="#00e5ff", dash=(4, 4))
             elif view == "original":
                 H, W = self.src.shape[:2]
@@ -1038,7 +1313,7 @@ class App(tk.Tk):
         if method == M_RADIAL:
             extra = "   Blend: " + ("hard" if s["hard"] else "soft")
         self.status.set(f"Source {self.src.shape[1]}x{self.src.shape[0]}   "
-                        f"Tile {tw}x{th}   Method: {method}{extra}   View: {view}   "
+                        f"Tile {tw}x{th}   Method: {method}{extra}   Repeat: {s['repeat']}   View: {view}   "
                         f"Zoom {s['zoom']}{note}")
 
 
