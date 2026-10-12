@@ -24,7 +24,7 @@ import os
 import struct
 import sys
 
-VERSION = "1.6.1"
+VERSION = "1.7.1"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "cleanpal")
 SETTINGS_PATH = os.path.join(APP_DIR, "cleanpal_settings.json")
@@ -717,16 +717,21 @@ SELECTION
   Selecting is easiest with Align off - the grid reflows as culling changes.
 
 MANUAL DELETE
-  Delete key        marks the selected colours as deleted   Marker: bar -
-                    Press Delete again on deleted colours to restore them.
+  Delete / Backspace / the "Delete / restore selected" button
+                    marks the selected colours as deleted   Marker: bar -
+                    Do it again on deleted colours to restore them.
   Deleted colours are left out of exact / similar matching completely, are
   baked by Snapshot and are left out of exports. In the Align view they
   vanish, so switch Align off to reach them again.
 
 MOVE MODE  (button or M key)
-  Drag a colour onto a slot: it lands there and the colours in between
-  shift along. Alt + drag swaps the two instead. With several colours
-  selected, dragging one of them moves the whole selection as a block.
+  Select first, then drag: dragging a SELECTED colour moves the
+  selection; dragging from an unselected colour (or outside the grid)
+  draws a selection box as usual (Shift adds, Ctrl toggles). To move one
+  colour: click it, then drag it.
+  A dropped colour lands on the slot and the colours in between shift
+  along. Alt + drag swaps two single colours instead. A multi-colour
+  selection moves as a block, in order, with its gaps closed up.
   Align is switched off while moving. Ctrl+Z undoes moves one at a time.
   Leaving Move mode with changes adds a "Moved colours" history entry.
 
@@ -740,6 +745,12 @@ PALETTISED PREVIEW
   The image is shown converted to the CURRENT result palette (the colours
   an export would write right now) and updates live as you edit.
   Space flips Palettised / Original. Wheel zoom, middle-drag pan, F fit.
+  Single / Grid: Grid shows columns x rows images per page (default 4x4,
+  1-16 each). All images share one pixel scale so relative sizes are true;
+  each cell is the size of the page's largest image. Up / Down moves a
+  page and refits; zoom and pan freely in between. Names show on the
+  cells when large enough (Names tick box or N key hides them); hover
+  shows details; double-click an image to open it in Single view.
   Dither: Floyd-Steinberg on / off. Matching is nearest RGB.
   Source images and WADs are only read, never modified.
 
@@ -913,6 +924,7 @@ class App:
         self.root.bind("<Control-z>", self._on_undo_key)
         self.root.bind("<Control-Z>", self._on_undo_key)
         self.root.bind("<Delete>", self._on_delete_key)
+        self.root.bind("<BackSpace>", self._on_delete_key)
         self.root.bind("<Control-a>", self._on_select_all)
         self.root.bind("<Control-A>", self._on_select_all)
         self.root.bind("<Key-m>", self._on_move_key)
@@ -1018,12 +1030,17 @@ class App:
         sf = ttk.LabelFrame(side, text="Selection & snapshots", padding=8)
         sf.pack(fill="x", pady=(8, 0))
         ttk.Label(sf, text="click / drag = select   shift = add   ctrl = toggle\n"
-                           "Del = delete / restore   Ctrl+A = all   M = move mode",
+                           "Del / Backspace = delete / restore   Ctrl+A = all\n"
+                           "M = move mode",
                   foreground="#666").pack(anchor="w")
-        self.move_btn = tk.Button(sf, text="Move mode: OFF", width=16, relief="raised",
+        mrow = ttk.Frame(sf)
+        mrow.pack(fill="x", pady=(6, 0))
+        self.move_btn = tk.Button(mrow, text="Move mode: OFF", width=16, relief="raised",
                                   command=self._on_move_button)
         self._move_btn_bg = self.move_btn.cget("background")
-        self.move_btn.pack(anchor="w", pady=(6, 0))
+        self.move_btn.pack(side="left")
+        ttk.Button(mrow, text="Delete / restore selected",
+                   command=self.delete_selected).pack(side="left", padx=(6, 0))
         sbf = ttk.Frame(sf)
         sbf.pack(fill="x", pady=(6, 0))
         self.snap_btn = ttk.Button(sbf, text="Snapshot", command=self.take_snapshot)
@@ -1546,12 +1563,11 @@ class App:
             mode = "replace"
         d = {"x0": ev.x, "y0": ev.y, "mode": mode, "moved": False, "move": False}
         if self.move_var.get():
+            # drag from a SELECTED colour = move the selection;
+            # drag from anything else = selection box
             slot = self._slot_at(ev.x, ev.y)
-            if slot is not None:
-                if slot in self.selection and len(self.selection) > 1:
-                    blk = sorted(self.selection)
-                else:
-                    blk = [slot]
+            if slot is not None and slot in self.selection and mode == "replace":
+                blk = sorted(self.selection) if len(self.selection) > 1 else [slot]
                 d.update(move=True, slot=slot, block=blk, swap=self._alt_down(ev))
         self._drag = d
 
@@ -1640,7 +1656,15 @@ class App:
         return "break"
 
     def _on_delete_key(self, ev):
-        if self._typing(ev) or self.res is None:
+        if self._typing(ev):
+            return
+        self.delete_selected()
+        return "break"
+
+    def delete_selected(self):
+        """Del / Backspace / button: delete the selection, or restore it if
+        every selected colour is already deleted."""
+        if self.res is None:
             return
         sel = {i for i in self.selection if self.rgbs[i] is not None}
         if not sel:
@@ -1691,8 +1715,9 @@ class App:
             self.align_var.set(False)
             self.align_chk.state(["disabled"])
             self._refresh_history()
-            self.status_var.set("Move mode: drag a colour onto a slot. Alt+drag swaps. "
-                                "Ctrl+Z undoes a move.")
+            self.status_var.set("Move mode: click to select, then drag a selected colour "
+                                "to move it. Drag elsewhere = selection box. Alt+drag "
+                                "swaps. Ctrl+Z undoes a move.")
             self.recompute()
         else:
             self._exit_move()
@@ -2202,6 +2227,8 @@ class WadSource:
 class PreviewWindow:
     PAD = 10
     ZOOM_STEP = 1.2
+    GAP = 8                 # page pixels between grid cells
+    MAX_CACHE = 400
     TYPES = ["All", "Patches", "Sprites", "Flats", "Graphics"]
 
     def __init__(self, app):
@@ -2211,10 +2238,9 @@ class PreviewWindow:
         self.app = app
         self.win = tk.Toplevel(app.root)
         self.win.title("Palettised preview")
-        self.win.minsize(420, 320)
-        geo = app.s.get("preview_geometry")
+        self.win.minsize(480, 340)
         try:
-            self.win.geometry(geo or "760x680")
+            self.win.geometry(app.s.get("preview_geometry") or "820x700")
         except tk.TclError:
             pass
         self.win.columnconfigure(0, weight=1)
@@ -2223,13 +2249,18 @@ class PreviewWindow:
         self.mode = None          # "folder" / "wad"
         self.folder = None
         self.wad = None
-        self.items = []           # all items in the source
-        self.view = []            # filtered items
+        self.items = []
+        self.view = []
         self.idx = 0
-        self.src = None
-        self.conv = None
-        self.conv_key = None
+        self.orig_cache = {}
+        self.conv_cache = {}
+        self.conv_cache_key = None
+        self.errors = {}
+        self.content = None
+        self.content_key = None
+        self.cells = []           # grid: (view index, x, y, w, h) in page pixels
         self._used = 0
+        self._native_checkers = {}
         self.view_scale = 1.0
         self.off_x = self.off_y = 0.0
         self.auto_fit = True
@@ -2238,15 +2269,26 @@ class PreviewWindow:
         self._tkimg = None
         self._checker = (None, None)
 
+        s = app.s
         self.view_var = tk.StringVar(value="pal")
-        self.dither_var = tk.BooleanVar(value=bool(app.s.get("preview_dither", False)))
-        self.type_var = tk.StringVar(value=app.s.get("preview_type", "All"))
+        self.dither_var = tk.BooleanVar(value=bool(s.get("preview_dither", False)))
+        self.type_var = tk.StringVar(value=s.get("preview_type", "All"))
         if self.type_var.get() not in self.TYPES:
             self.type_var.set("All")
-        self.filter_var = tk.StringVar(value=app.s.get("preview_filter", ""))
+        self.filter_var = tk.StringVar(value=s.get("preview_filter", ""))
+        self.layout_var = tk.StringVar(value=s.get("preview_layout", "single"))
+        if self.layout_var.get() not in ("single", "grid"):
+            self.layout_var.set("single")
+        self.cols = self._clamp(s.get("preview_cols", 4))
+        self.rows = self._clamp(s.get("preview_rows", 4))
+        self.names_var = tk.BooleanVar(value=bool(s.get("preview_names", True)))
+        self.cols_var = tk.StringVar(value=str(self.cols))
+        self.rows_var = tk.StringVar(value=str(self.rows))
         self.name_var = tk.StringVar(value="Open a folder of PNGs or a WAD")
         self.info_var = tk.StringVar(value="")
+        self.hover_var = tk.StringVar(value="")
 
+        # row 1: sources + navigation
         top = ttk.Frame(self.win, padding=(8, 8, 8, 2))
         top.grid(row=0, column=0, sticky="ew")
         ttk.Button(top, text="Open folder...", command=self.open_folder_dialog).pack(side="left")
@@ -2258,28 +2300,47 @@ class PreviewWindow:
             side="left", padx=(2, 0))
         ttk.Label(top, textvariable=self.name_var).pack(side="left", padx=8)
 
+        # row 2: filters, layout, view
         row2 = ttk.Frame(self.win, padding=(8, 2, 8, 4))
         row2.grid(row=1, column=0, sticky="ew")
         ttk.Label(row2, text="Type").pack(side="left")
         self.type_cb = ttk.Combobox(row2, textvariable=self.type_var, values=self.TYPES,
-                                    state="readonly", width=10)
-        self.type_cb.pack(side="left", padx=(4, 10))
+                                    state="readonly", width=9)
+        self.type_cb.pack(side="left", padx=(4, 8))
         self.type_cb.bind("<<ComboboxSelected>>", lambda e: self.apply_filter())
         ttk.Label(row2, text="Name").pack(side="left")
-        self.filter_entry = ttk.Entry(row2, textvariable=self.filter_var, width=14)
-        self.filter_entry.pack(side="left", padx=(4, 0))
+        self.filter_entry = ttk.Entry(row2, textvariable=self.filter_var, width=11)
+        self.filter_entry.pack(side="left", padx=(4, 10))
         self.filter_var.trace_add("write", lambda *a: self.apply_filter())
+
+        ttk.Radiobutton(row2, text="Single", value="single", variable=self.layout_var,
+                        command=self._on_layout).pack(side="left")
+        ttk.Radiobutton(row2, text="Grid", value="grid", variable=self.layout_var,
+                        command=self._on_layout).pack(side="left", padx=(4, 4))
+        self.cols_sb = ttk.Spinbox(row2, from_=1, to=16, width=3, textvariable=self.cols_var)
+        self.cols_sb.pack(side="left")
+        ttk.Label(row2, text="x").pack(side="left", padx=2)
+        self.rows_sb = ttk.Spinbox(row2, from_=1, to=16, width=3, textvariable=self.rows_var)
+        self.rows_sb.pack(side="left")
+        ttk.Checkbutton(row2, text="Names", variable=self.names_var,
+                        command=self.redraw).pack(side="left", padx=(8, 0))
+        for sb, var in ((self.cols_sb, self.cols_var), (self.rows_sb, self.rows_var)):
+            sb.bind("<Up>", lambda e, v=var: self._spin(v, 1))
+            sb.bind("<Down>", lambda e, v=var: self._spin(v, -1))
+            sb.bind("<MouseWheel>", lambda e, v=var: self._spin(v, 1 if e.delta > 0 else -1))
+            var.trace_add("write", lambda *a: self._on_grid_size())
+
         ttk.Checkbutton(row2, text="Dither", variable=self.dither_var,
                         command=self.schedule).pack(side="right")
         ttk.Radiobutton(row2, text="Original", value="orig", variable=self.view_var,
-                        command=self.redraw).pack(side="right", padx=(0, 10))
+                        command=self.redraw).pack(side="right", padx=(0, 8))
         ttk.Radiobutton(row2, text="Palettised", value="pal", variable=self.view_var,
-                        command=self.redraw).pack(side="right", padx=(0, 6))
+                        command=self.redraw).pack(side="right", padx=(0, 4))
 
         self.canvas = tk.Canvas(self.win, bg="#262626", highlightthickness=0)
         self.canvas.grid(row=2, column=0, sticky="nsew", padx=8)
         cv = self.canvas
-        cv.bind("<Configure>", lambda e: self.fit() if self.auto_fit else self.redraw())
+        cv.bind("<Configure>", lambda e: self.redraw())
         cv.bind("<MouseWheel>", self._on_wheel)
         cv.bind("<Button-4>", lambda e: self._zoom_at(e.x, e.y, self.ZOOM_STEP))
         cv.bind("<Button-5>", lambda e: self._zoom_at(e.x, e.y, 1 / self.ZOOM_STEP))
@@ -2288,11 +2349,14 @@ class PreviewWindow:
         cv.bind("<ButtonRelease-2>", self._pan_end)
         cv.bind("<Double-Button-2>", lambda e: self.fit())
         cv.bind("<Button-1>", lambda e: cv.focus_set())
+        cv.bind("<Double-Button-1>", self._on_double_click)
+        cv.bind("<Motion>", self._on_motion)
+        cv.bind("<Leave>", lambda e: self.hover_var.set(""))
 
         bottom = ttk.Frame(self.win, padding=(8, 4, 8, 8))
         bottom.grid(row=3, column=0, sticky="ew")
-        ttk.Label(bottom, textvariable=self.info_var,
-                  font=("Consolas", 10)).pack(anchor="w")
+        ttk.Label(bottom, textvariable=self.info_var, font=("Consolas", 10)).pack(anchor="w")
+        ttk.Label(bottom, textvariable=self.hover_var, font=("Consolas", 10)).pack(anchor="w")
 
         w = self.win
         w.bind("<Up>", lambda e: self.step(-1))
@@ -2302,22 +2366,31 @@ class PreviewWindow:
         w.bind("<space>", self._key_flip)
         w.bind("<Key-f>", self._key_fit)
         w.bind("<Key-F>", self._key_fit)
+        w.bind("<Key-n>", self._key_names)
+        w.bind("<Key-N>", self._key_names)
         w.protocol("WM_DELETE_WINDOW", self.close)
         w.focus_set()
 
-        st = app.s.get("preview_mode")
-        sel = app.s.get("preview_item")
-        if st == "wad" and app.s.get("preview_wad") and os.path.isfile(app.s["preview_wad"]):
-            self.open_wad(app.s["preview_wad"], sel)
-        elif app.s.get("preview_dir") and os.path.isdir(app.s["preview_dir"]):
-            self.open_folder(app.s["preview_dir"], sel)
+        st = s.get("preview_mode")
+        sel = s.get("preview_item")
+        if st == "wad" and s.get("preview_wad") and os.path.isfile(s["preview_wad"]):
+            self.open_wad(s["preview_wad"], sel)
+        elif s.get("preview_dir") and os.path.isdir(s["preview_dir"]):
+            self.open_folder(s["preview_dir"], sel)
         else:
             self.redraw()
 
-    # ---------------- keys
+    # ---------------- helpers
+    @staticmethod
+    def _clamp(v):
+        try:
+            return max(1, min(16, int(v)))
+        except (TypeError, ValueError):
+            return 4
+
     @staticmethod
     def _typing(ev):
-        return ev.widget.winfo_class() in ("TEntry", "Entry", "TCombobox")
+        return ev.widget.winfo_class() in ("TEntry", "Entry", "TCombobox", "TSpinbox")
 
     def _key_flip(self, ev):
         if self._typing(ev):
@@ -2328,6 +2401,39 @@ class PreviewWindow:
         if self._typing(ev):
             return
         return self.fit()
+
+    def _key_names(self, ev):
+        if self._typing(ev):
+            return
+        self.names_var.set(not self.names_var.get())
+        self.redraw()
+        return "break"
+
+    def _grid(self):
+        return self.layout_var.get() == "grid"
+
+    def _per_page(self):
+        return self.cols * self.rows
+
+    # ---------------- layout controls
+    def _spin(self, var, n):
+        var.set(str(self._clamp(self._clamp(var.get()) + n)))
+        return "break"
+
+    def _on_grid_size(self):
+        try:
+            c, r = int(self.cols_var.get()), int(self.rows_var.get())
+        except ValueError:
+            return                      # partial typing - wait
+        if not (1 <= c <= 16 and 1 <= r <= 16):
+            return
+        if (c, r) != (self.cols, self.rows):
+            self.cols, self.rows = c, r
+            if self._grid():
+                self.show(refit=True)
+
+    def _on_layout(self):
+        self.show(refit=True)
 
     # ---------------- sources
     def open_folder_dialog(self):
@@ -2350,6 +2456,12 @@ class PreviewWindow:
         if p:
             self.open_wad(p)
 
+    def _reset_caches(self):
+        self.orig_cache.clear()
+        self.conv_cache.clear()
+        self.errors.clear()
+        self.content_key = None
+
     def open_folder(self, folder, select=None):
         try:
             names = sorted((f for f in os.listdir(folder) if f.lower().endswith(".png")),
@@ -2361,6 +2473,7 @@ class PreviewWindow:
         self.items = [{"name": n, "kind": "png", "fmt": "file",
                        "path": os.path.join(folder, n),
                        "key": ("file", os.path.join(folder, n))} for n in names]
+        self._reset_caches()
         self.app.s.update(preview_mode="folder", preview_dir=folder)
         self.type_cb.state(["disabled"])
         self.apply_filter(select)
@@ -2382,6 +2495,7 @@ class PreviewWindow:
             return
         self.mode, self.wad, self.folder = "wad", wad, None
         self.items = wad.items
+        self._reset_caches()
         self.app.s.update(preview_mode="wad", preview_wad=path)
         self.type_cb.state(["!disabled"])
         self.apply_filter(select)
@@ -2392,62 +2506,208 @@ class PreviewWindow:
         kind = self.type_var.get()
         text = self.filter_var.get().strip().upper()
         self.app.s.update(preview_type=kind, preview_filter=self.filter_var.get())
-        out = []
-        for it in self.items:
-            if self.mode == "wad" and kind != "All" and KIND_LABEL.get(it["kind"]) != kind:
-                continue
-            if text and text not in it["name"].upper():
-                continue
-            out.append(it)
-        self.view = out
-        names = [it["name"] for it in out]
+        self.view = [it for it in self.items
+                     if not (self.mode == "wad" and kind != "All"
+                             and KIND_LABEL.get(it["kind"]) != kind)
+                     and (not text or text in it["name"].upper())]
+        names = [it["name"] for it in self.view]
         self.idx = names.index(select) if select in names else 0
-        if not out:
-            self.src = None
+        self.show(refit=True)
+
+    # ---------------- images
+    def _orig(self, it):
+        from PIL import Image
+
+        k = it["key"]
+        if k in self.orig_cache:
+            return self.orig_cache[k]
+        if len(self.orig_cache) > self.MAX_CACHE:
+            self.orig_cache.clear()
+        try:
+            if it["fmt"] == "file":
+                with Image.open(it["path"]) as im:   # read only
+                    im.load()
+                    img = im.convert("RGBA")
+            else:
+                img = self.wad.image(it)
+        except Exception as e:      # bad data: report, keep browsing
+            img = None
+            self.errors[k] = str(e)
+        self.orig_cache[k] = img
+        return img
+
+    def _conv(self, it, img, pal):
+        ck = (tuple(pal), self.dither_var.get())
+        if ck != self.conv_cache_key:
+            self.conv_cache.clear()
+            self.conv_cache_key = ck
+        k = it["key"]
+        if k not in self.conv_cache:
+            if len(self.conv_cache) > self.MAX_CACHE:
+                self.conv_cache.clear()
+            self.conv_cache[k] = palettise(img, pal, self.dither_var.get())
+        return self.conv_cache[k]
+
+    def _native_checker(self, size):
+        from PIL import Image
+
+        if size in self._native_checkers:
+            return self._native_checkers[size]
+        w, h = size
+        cell = 4
+        img = Image.new("RGBA", size)
+        img.putdata([(90, 90, 90, 255) if ((x // cell) + (y // cell)) % 2
+                     else (122, 122, 122, 255) for y in range(h) for x in range(w)])
+        if len(self._native_checkers) > 64:
+            self._native_checkers.clear()
+        self._native_checkers[size] = img
+        return img
+
+    def _page_range(self):
+        per = self._per_page()
+        start = (self.idx // per) * per
+        return start, min(start + per, len(self.view))
+
+    def _content(self):
+        """The image to display (single image or a whole grid page)."""
+        from PIL import Image
+
+        if not self.view:
+            return None
+        pal = self.app.preview_palette()
+        pal_on = self.view_var.get() == "pal" and bool(pal)
+        palkey = (tuple(pal), self.dither_var.get()) if pal_on else None
+        if self._grid():
+            a, b = self._page_range()
+            key = ("grid", tuple(it["key"] for it in self.view[a:b]), self.cols, palkey)
+        else:
+            key = ("single", self.view[self.idx]["key"], palkey)
+        if key == self.content_key:
+            return self.content
+
+        used = set()
+
+        def get(it):
+            img = self._orig(it)
+            if img is not None and pal_on:
+                img = self._conv(it, img, pal)
+                cols = img.getcolors(1 << 16)
+                if cols:
+                    used.update(c[:3] for _, c in cols if c[3])
+            return img
+
+        self.cells = []
+        if not self._grid():
+            img = get(self.view[self.idx])
+        else:
+            a, b = self._page_range()
+            ims = [(i, get(self.view[i])) for i in range(a, b)]
+            sizes = [im.size for _, im in ims if im is not None] or [(64, 64)]
+            cw = max(s[0] for s in sizes)
+            ch = max(s[1] for s in sizes)
+            G = self.GAP
+            nrows = -(-len(ims) // self.cols)
+            W = self.cols * cw + (self.cols + 1) * G
+            H = nrows * ch + (nrows + 1) * G
+            img = Image.new("RGBA", (W, H), (30, 30, 30, 255))
+            for k, (i, im) in enumerate(ims):
+                cx = G + (k % self.cols) * (cw + G)
+                cy = G + (k // self.cols) * (ch + G)
+                self.cells.append((i, cx, cy, cw, ch))
+                if im is None:
+                    continue
+                ox, oy = cx + (cw - im.size[0]) // 2, cy + (ch - im.size[1]) // 2
+                img.paste(self._native_checker(im.size), (ox, oy))
+                img.alpha_composite(im, (ox, oy))
+        self._used = len(used)
+        self.content = img
+        self.content_key = key
+        return img
+
+    # ---------------- navigation
+    def show(self, refit=False):
+        prev = self.content.size if self.content is not None else None
+        self.content_key = None
+        if not self.view:
+            self.content = None
             what = "PNGs" if self.mode == "folder" else "matching graphics"
-            self.name_var.set("No %s" % what)
+            self.name_var.set("No %s" % what if self.mode else
+                              "Open a folder of PNGs or a WAD")
             self.info_var.set("")
             self.redraw()
             return
-        self.load_current()
-
-    def load_current(self):
-        it = self.view[self.idx]
-        old = self.src.size if self.src is not None else None
-        try:
-            if it["fmt"] == "file":
-                from PIL import Image
-                with Image.open(it["path"]) as im:   # read only
-                    im.load()
-                    self.src = im.convert("RGBA")
-            else:
-                self.src = self.wad.image(it)
-        except Exception as e:   # bad image data: report, keep browsing
-            self.src = None
-            self.name_var.set("%d/%d  %s  (can't decode: %s)" % (
-                self.idx + 1, len(self.view), it["name"], e))
-            self.redraw()
-            return
-        self.conv_key = None
-        self.app.s["preview_item"] = it["name"]
-        kind = "" if it["fmt"] == "file" else "%s " % it["kind"]
-        self.name_var.set("%d/%d  %s  [%s%dx%d]" % (
-            self.idx + 1, len(self.view), it["name"], kind, self.src.size[0], self.src.size[1]))
-        if self.auto_fit or old != self.src.size:
-            self.fit()
+        img = self._content()
+        if self._grid():
+            per = self._per_page()
+            a, b = self._page_range()
+            pages = -(-len(self.view) // per)
+            self.name_var.set("Page %d/%d  (%d-%d of %d)" % (
+                a // per + 1, pages, a + 1, b, len(self.view)))
+            refit = True                       # every page change refits
         else:
-            self.redraw()
+            it = self.view[self.idx]
+            self.app.s["preview_item"] = it["name"]
+            if img is None:
+                self.name_var.set("%d/%d  %s  (can't decode: %s)" % (
+                    self.idx + 1, len(self.view), it["name"],
+                    self.errors.get(it["key"], "?")))
+            else:
+                kind = "" if it["fmt"] == "file" else "%s " % it["kind"]
+                self.name_var.set("%d/%d  %s  [%s%dx%d]" % (
+                    self.idx + 1, len(self.view), it["name"], kind,
+                    img.size[0], img.size[1]))
+            if img is not None and prev != img.size:
+                refit = True
+        if refit:
+            self.auto_fit = True
+        self.redraw()
 
     def step(self, n):
         if self.view:
-            self.idx = (self.idx + n) % len(self.view)
-            self.load_current()
+            if self._grid():
+                per = self._per_page()
+                pages = -(-len(self.view) // per)
+                page = (self.idx // per + n) % pages
+                self.idx = page * per
+            else:
+                self.idx = (self.idx + n) % len(self.view)
+            self.show()
         return "break"
 
     def flip(self):
         self.view_var.set("orig" if self.view_var.get() == "pal" else "pal")
         self.redraw()
         return "break"
+
+    def _cell_at(self, x, y):
+        if not self._grid() or self.content is None:
+            return None
+        px = (x - self.off_x) / self.view_scale
+        py = (y - self.off_y) / self.view_scale
+        for c in self.cells:
+            i, cx, cy, cw, ch = c
+            if cx <= px < cx + cw and cy <= py < cy + ch:
+                return c
+        return None
+
+    def _on_motion(self, ev):
+        c = self._cell_at(ev.x, ev.y)
+        if c is None:
+            self.hover_var.set("")
+            return
+        it = self.view[c[0]]
+        im = self.orig_cache.get(it["key"])
+        size = ("%dx%d" % im.size) if im is not None else "can't decode"
+        kind = "" if it["fmt"] == "file" else "%s " % it["kind"]
+        self.hover_var.set("%s  [%s%s]   double-click = open single" % (it["name"], kind, size))
+
+    def _on_double_click(self, ev):
+        c = self._cell_at(ev.x, ev.y)
+        if c is None:
+            return
+        self.idx = c[0]
+        self.layout_var.set("single")
+        self.show(refit=True)
 
     # ---------------- conversion
     def schedule(self):
@@ -2459,46 +2719,22 @@ class PreviewWindow:
         self._after = None
         self.redraw()
 
-    def _image(self):
-        if self.src is None:
-            return None
-        pal = self.app.preview_palette()
-        if self.view_var.get() == "orig" or not pal:
-            return self.src
-        key = (self.view[self.idx]["key"], tuple(pal), self.dither_var.get())
-        if key != self.conv_key:
-            self.conv = palettise(self.src, pal, self.dither_var.get())
-            self.conv_key = key
-            used = self.conv.convert("RGB").getcolors(1 << 16)
-            self._used = len(used) if used else 0
-        return self.conv
-
     # ---------------- view transform
-    def _fit_scale(self):
-        if self.src is None:
-            return 1.0
+    def _fit_scale(self, size):
         cw = max(self.canvas.winfo_width(), 1)
         ch = max(self.canvas.winfo_height(), 1)
-        w, h = self.src.size
-        return max(min((cw - 2 * self.PAD) / w, (ch - 2 * self.PAD) / h), 0.01)
+        return max(min((cw - 2 * self.PAD) / size[0], (ch - 2 * self.PAD) / size[1]), 0.01)
 
     def fit(self):
-        if self.src is not None:
-            cw = max(self.canvas.winfo_width(), 1)
-            ch = max(self.canvas.winfo_height(), 1)
-            w, h = self.src.size
-            self.view_scale = self._fit_scale()
-            self.off_x = (cw - w * self.view_scale) / 2
-            self.off_y = (ch - h * self.view_scale) / 2
         self.auto_fit = True
         self.redraw()
         return "break"
 
     def _zoom_at(self, x, y, factor):
-        if self.src is None:
+        if self.content is None:
             return
-        fit = self._fit_scale()
-        new = min(max(self.view_scale * factor, fit * 0.25), max(fit * 4, 32.0))
+        fit = self._fit_scale(self.content.size)
+        new = min(max(self.view_scale * factor, fit * 0.25), max(fit * 8, 32.0))
         if new == self.view_scale:
             return
         wx = (x - self.off_x) / self.view_scale
@@ -2551,14 +2787,19 @@ class PreviewWindow:
 
         cv = self.canvas
         cv.delete("all")
-        im = self._image()
+        im = self._content()
         if im is None:
-            cv.create_text(cv.winfo_width() / 2, cv.winfo_height() / 2,
-                           text="Open a folder of PNGs or a WAD", fill="#888")
+            msg = "Open a folder of PNGs or a WAD" if not self.mode else "Nothing to show"
+            cv.create_text(cv.winfo_width() / 2, cv.winfo_height() / 2, text=msg,
+                           fill="#888")
             return
         cw, ch = cv.winfo_width(), cv.winfo_height()
-        sc = self.view_scale
         w, h = im.size
+        if self.auto_fit:
+            self.view_scale = self._fit_scale(im.size)
+            self.off_x = (cw - w * self.view_scale) / 2
+            self.off_y = (ch - h * self.view_scale) / 2
+        sc = self.view_scale
         sx0 = max(0, math.floor(-self.off_x / sc))
         sy0 = max(0, math.floor(-self.off_y / sc))
         sx1 = min(w, math.ceil((cw - self.off_x) / sc))
@@ -2573,6 +2814,21 @@ class PreviewWindow:
             self._tkimg = ImageTk.PhotoImage(out)
             cv.create_image(round(self.off_x + sx0 * sc), round(self.off_y + sy0 * sc),
                             image=self._tkimg, anchor="nw")
+        # names on grid cells when big enough to read
+        for i, cx, cy, cwid, chei in (self.cells if self.names_var.get() else ()):
+            if cwid * sc < 70:
+                break
+            x = self.off_x + cx * sc
+            y = self.off_y + cy * sc
+            if x > cw or y > ch or x + cwid * sc < 0 or y + chei * sc < 0:
+                continue
+            t = cv.create_text(x + 4, y + 3, text=self.view[i]["name"], anchor="nw",
+                               fill="#ffffff", font=("Consolas", 9))
+            bx = cv.bbox(t)
+            r = cv.create_rectangle(bx[0] - 2, bx[1] - 1, bx[2] + 2, bx[3] + 1,
+                                    fill="#000000", outline="")
+            cv.tag_lower(r, t)
+
         src = ("   source pal: %s" % self.wad.pal_src) if self.mode == "wad" else ""
         pal = self.app.preview_palette() or []
         if self.view_var.get() == "pal" and pal:
@@ -2590,7 +2846,10 @@ class PreviewWindow:
             self.app.s["preview_geometry"] = self.win.geometry()
         except Exception:
             pass
-        self.app.s["preview_dither"] = self.dither_var.get()
+        self.app.s.update(preview_dither=self.dither_var.get(),
+                          preview_layout=self.layout_var.get(),
+                          preview_names=self.names_var.get(),
+                          preview_cols=self.cols, preview_rows=self.rows)
 
     def close(self):
         self.store_state()
