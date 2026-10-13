@@ -177,13 +177,14 @@ def build_batch_cmdline(path, args):
     return f'{quote_for_cmd(comspec)} /s /c "{inner}"'
 
 
-def run_cmd(name, args, feed=None):
+def run_cmd(name, args, feed=None, echo=True):
     """Run an external command by name (resolved on PATH). .py files are
     dispatched through the py launcher; .bat/.cmd files go through an
     explicitly quoted cmd.exe /s /c line so special characters in filenames
     survive; everything else runs directly. If `feed` is given it is piped
-    to stdin. Returns the exit code, or 2 if the tool cannot be found or
-    launched."""
+    to stdin. If `echo` is False the resolved "[cmd]" line is not printed
+    (callers that print their own summary line use this). Returns the exit
+    code, or 2 if the tool cannot be found or launched."""
     path = resolve_cmd(name)
     if not path:
         print(f"Error: '{name}' not found on PATH.")
@@ -201,11 +202,13 @@ def run_cmd(name, args, feed=None):
     else:
         cmd = [path] + list(args)
 
-    # Always print the resolved command so failures are diagnosable.
-    if isinstance(cmd, str):
-        print(DGRY(f"  [cmd] {cmd}"))
-    else:
-        print(DGRY("  [cmd] " + " ".join(str(a) for a in cmd)))
+    # Print the resolved command so failures are diagnosable (unless the
+    # caller has opted out because it prints its own summary line).
+    if echo:
+        if isinstance(cmd, str):
+            print(DGRY(f"  [cmd] {cmd}"))
+        else:
+            print(DGRY("  [cmd] " + " ".join(str(a) for a in cmd)))
 
     try:
         if feed is not None:

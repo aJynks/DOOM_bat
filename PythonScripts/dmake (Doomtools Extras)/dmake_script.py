@@ -151,10 +151,17 @@ def apply_settings():
 # ==============================================================================
 # Mode: update  (standalone; ignores all other args)
 # ==============================================================================
+UPDATE_FLAGS = ("--update", "--update-cleanup", "--update-shell",
+                "--update-docs")
+
+
 def invoke_update_mode():
-    for flag in ("--update", "--update-cleanup", "--update-shell",
-                 "--update-docs"):
-        err = run_cmd("doomtools", [flag])
+    # One summary line up front (built from the same flag list the loop uses,
+    # so it cannot drift), then raw doomtools output with no per-step [cmd]
+    # echo. Stops on the first failing step, matching the && chain shown.
+    print(DGRY("> " + " && ".join(f"doomtools {f}" for f in UPDATE_FLAGS)))
+    for flag in UPDATE_FLAGS:
+        err = run_cmd("doomtools", [flag], echo=False)
         if err != 0:
             sys.exit(err)
     sys.exit(0)
