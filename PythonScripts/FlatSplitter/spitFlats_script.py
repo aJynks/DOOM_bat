@@ -14,8 +14,51 @@ except ImportError:
     print("Missing dependency. Install with: pip install Pillow")
     sys.exit(1)
 
+HELP_TEXT = """
+splitflats - cut images into equal-sized tiles (Doom flat splitter)
+
+USAGE
+  splitflats -size WxH
+  splitflats --help | -help | -h | /?
+
+OPTIONS
+  -size WxH     Tile size in pixels (default 64x64), e.g. -size 64x64, -size 128x128
+  -help         Show this help
+
+BEHAVIOUR
+  Processes every image in the current folder
+  (png, jpg, jpeg, bmp, gif, tif, tiff, webp).
+  Tiles are numbered left-to-right, top-to-bottom, starting at 1,
+  and written to .\\split\\ as <basename><n>.<ext>
+
+VALIDATION (all files checked before anything is written)
+  - Image width/height must divide evenly by the tile size
+  - Every output name (basename + tile number) must be exactly 8 chars
+    Numbering starts at 1, so in practice the basename must be 7 chars
+    and the image must produce at most 9 tiles
+    e.g. FLOOR01 -> FLOOR011 .. FLOOR019
+  If any file fails, nothing is processed.
+
+EXAMPLES
+  splitflats -size 64x64
+  splitflats -size 32x32
+"""
+
+HELP_FLAGS = {'--help', '-help', '-h', '/?'}
+
+def show_help():
+    """Print help text and exit"""
+    print(HELP_TEXT)
+    sys.exit(0)
+
 def parse_arguments():
     """Parse command line arguments"""
+    # No params or any help flag -> show help
+    if len(sys.argv) < 2:
+        show_help()
+    if any(arg.lower() in HELP_FLAGS for arg in sys.argv[1:]):
+        show_help()
+
     args = {
         'size': (64, 64)
     }
