@@ -1,0 +1,1 @@
+"""cleanpal GUI (tkinter)."""

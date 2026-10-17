@@ -1,0 +1,737 @@
+==============================================================================
+ cleanpal 2.7.2 - TOOLS GUIDE
+ Every control in the side panel (both modes), the tool windows, the top
+ bar, the fade view toolbar and the preview window - what it does and when
+ to use it.
+==============================================================================
+
+CONTENTS
+  1. The big picture
+  2. Top bar
+  3. PLAYPAL mode
+       3.1 The tools and the clean-snapshot rule
+       3.2 Cull tools      (matching, Align, delete, Snapshot)
+       3.3 Move tools
+       3.4 Reorder tools
+       3.5 Paint tools     (ramp + fill)
+       3.6 View
+       3.7 Selection & history   (shared by both modes)
+       3.8 Export
+       3.9 Presets + Help        (shared by both modes)
+  4. COLORMAP mode
+       4.1 What a COLORMAP is (30-second version)
+       4.2 The fade view and its toolbar
+       4.3 COLORMAP panel (generation, files, export)
+       4.4 Edit fades of selected colours
+       4.5 Create fade colours
+       4.6 Diagnostics
+  5. Other windows: Colour picker, Scratch palette
+  6. Palettised preview (incl. COLORMAP lighting)
+  7. Workflows (step by step)
+  8. Keys and mouse quick reference
+  9. Things that commonly confuse
+
+
+==============================================================================
+ 1. THE BIG PICTURE
+==============================================================================
+
+cleanpal edits two things that belong together:
+
+  PLAYPAL (pal0)  the 256 colours. Mode: PLAYPAL.
+  COLORMAP        how every colour darkens with light. Mode: COLORMAP.
+
+Switch with the Mode dropdown in the top bar. The palette grid is always
+there; in COLORMAP mode it shrinks to make room for the fade view below it.
+
+Nothing you do touches your source files. You work on a WORKING PALETTE,
+every change becomes a HISTORY entry (Back / Ctrl+Z undoes), and you write
+files with Export (or keep everything in a .cleanpal project).
+
+Ideas that run through everything:
+
+  ONE TOOL AT A TIME
+    PLAYPAL work happens in four tool windows - Cull, Move, Reorder, Paint -
+    opened from the Tools panel. Only one is open at a time. With none open
+    the grid just shows the current snapshot.
+
+  LIVE vs APPLIED
+    Culling is live: colours are only MARKED for removal (X / O) while the
+    Cull tools are open, until you take a Snapshot. Moves, reorders, ramps,
+    fills and COLORMAP edits are applied as history entries.
+
+  CULL, SNAPSHOT, THEN EVERYTHING ELSE
+    Move, Reorder and Paint need a clean snapshot (nothing marked). Culling
+    keeps the first colour of each group, so changing the palette with culls
+    pending would change which colours get kept.
+
+  SELECTION
+    Click / drag cells in the grid to select (cyan outline). Most tools act
+    on "the selection" - culling scope, moves, reorders, ramps, fills,
+    delete, and in COLORMAP mode which fades you see and edit.
+
+
+==============================================================================
+ 2. TOP BAR
+==============================================================================
+
+Open...              Load a palette: WAD (PLAYPAL, and its COLORMAP is kept
+                     for compare/import - else the IWAD's COLORMAP), SLADE playpal.pal / pal0.pal,
+                     SLADE pal0.png, DoomTools playpal.png (or a project).
+                     Starts a fresh history. Asks first if you have unsaved
+                     changes.
+
+Load project...      Open a .cleanpal project (history, settings and all).
+                     Starts in the last project folder. Asks first if you
+                     have unsaved changes.
+
+Save project         Save everything to a .cleanpal file: all history
+Save project as...   entries, current entry, deleted marks, selection, every
+                     setting, COLORMAP hand edits, the loaded COLORMAP, the
+                     mode, ramp state, scratch sets. Palettes are stored
+                     inside, so the project still opens if the WAD moves.
+
+Mode                 PLAYPAL / COLORMAP (see sections 3 and 4). Switching to
+                     COLORMAP closes the open PLAYPAL tool.
+
+IWAD: <name>         The IWAD (always needed): textures + patches for the
+                     preview, fallback PLAYPAL / COLORMAP. Asked for on
+                     first start (offers one found beside the file or in
+                     DOOMWADDIR / DOOMWADPATH). Click to change.
+Scratch palette...   Temporary colour swatches (section 5).
+Palettised preview...  See your textures/sprites through the current palette
+                     and COLORMAP (section 6).
+
+
+==============================================================================
+ 3. PLAYPAL MODE
+==============================================================================
+
+------------------------------------------------------------------------------
+ 3.1 THE TOOLS AND THE CLEAN-SNAPSHOT RULE
+------------------------------------------------------------------------------
+Tools panel (top of the side panel): Cull, Move, Reorder, Paint.
+  Click a button to open that tool's window; click it again (or Close /
+  Esc / the window's X) to close it. The open tool's button lights up and
+  the grid border takes its colour:
+    Cull red   Move yellow   Reorder blue   Paint orange
+  Opening another tool closes the current one first.
+
+No tool open ("neutral")
+  The grid shows the current snapshot - no X / O markers, Align ignored.
+  You can select, step through history, export and save.
+
+The clean-snapshot rule
+  Move, Reorder and Paint need a clean snapshot. If you switch to one of
+  them from the Cull tools while marks are on the grid, cleanpal says e.g.
+  "Moving needs a clean snapshot first" and offers:
+    Take snapshot and continue   snapshot (with your Align setting), then
+                                 open the tool
+    Cancel                       stay in the Cull tools
+
+While Move / Reorder / Paint is open
+  - culling is paused, Align is ignored (slots = indices)
+  - Back / Ctrl+Z only steps through that session's entries
+  - Export and Collapse are paused
+
+------------------------------------------------------------------------------
+ 3.2 CULL TOOLS   (Cull button)
+------------------------------------------------------------------------------
+Finds colours you can remove. Culling ONLY runs while this window is open.
+Nothing is removed until Snapshot; cells just get markers so you can judge.
+
+1. Remove exact colours
+     Entries with exactly the same RGB. The FIRST (lowest index) is kept,
+     later copies are marked X. Doom's palette has several of these.
+
+2. Remove similar colours   (needs 1 ticked)
+     Colours closer together than the Tolerance are grouped; the lowest
+     index of each group is kept, the rest are marked O.
+
+     Metric - how "closeness" is measured:
+       CIEDE2000 (default)  best match to how eyes see differences
+       CIE Lab dE76         older, simpler perceptual distance
+       Weighted RGB         plain RGB with eye-weighting
+     Tolerance slider / box - how close counts as "the same". Small values
+       remove near-identical colours only; large values merge whole ramps.
+       Watch the stats line ("Similar: N removed") while you drag.
+       Arrow keys / wheel step it; Shift = 10x.
+     Cull: Whole palette / Selected only
+       Selected only = only the selected colours can merge, and only with
+       each other. Select a ramp you think is too dense, cull just that.
+       Selecting in the grid switches this to Selected only.
+
+Align (pack kept colours toward index 0)
+  Shows (and on Snapshot / Export writes) the kept colours packed to the
+  start, with all the free space as empty slots at the end. Off = removed
+  colours just leave holes where they were.
+
+Delete / restore selected   (or Del / Backspace)
+  Manually marks colours for removal (bar marker) - same as culling, but
+  your choice. Again = restore.
+
+Snapshot
+  "export + reload": the current result (culls applied, packed if Align)
+  becomes the working palette as a new history entry.
+
+Close
+  With marks pending it asks: Take snapshot / Close without applying /
+  Cancel. Close without applying keeps your settings and marks - they come
+  back when you reopen the Cull tools.
+
+Legend: X = exact removed, O = similar removed, bar = deleted,
+        checker = empty slot. Hover any cell to see what it would merge
+        with and the distance.
+
+------------------------------------------------------------------------------
+ 3.3 MOVE TOOLS   (Move button or M)
+------------------------------------------------------------------------------
+Click to select, then drag a SELECTED colour to move it. A multi-colour
+selection moves as one block (in order, gaps closed). Dragging anywhere
+else draws a selection box.
+  Swap instead of insert   a single colour swaps places with the target
+                           (Alt+drag does the same)
+  Undo move  (Ctrl+Z)      undo the last move
+  Revert                   back to how it was when opened / last applied
+  Apply                    record the moves as one "Moved colours" entry;
+                           the window stays open
+  Close with unapplied moves asks Apply / Discard / Cancel. History can't
+  be stepped while moves are unapplied.
+
+Clipboard (Move): Ctrl+X cut - the colours come out and the rest closes up;
+  Ctrl+C copy; Ctrl+Shift+V insert paste in front of the first selected
+  cell (uses empty slots, popup if there's no room). Overwrite paste is Paint-only. Cut +
+  insert paste = move a whole family somewhere else. See 3.5 for details.
+
+------------------------------------------------------------------------------
+ 3.4 REORDER TOOLS   (Reorder button)
+------------------------------------------------------------------------------
+Reorders colours (the palette's LAYOUT, not the colours themselves).
+
+Method        how colours are grouped / ordered:
+  Curved ramps     (default, best on Doom's palette) links each colour to
+                   its nearest darker neighbour; follows hue-shifted ramps.
+  Line ramps       finds straight lines through RGB space.
+  Shade families   groups colours with the same R:G:B ratio.
+  Hue bands        simple: greys, then by hue. Baseline.
+  Stepped hue      smooth-looking grid, not strict ramps.
+  Gradient path    one smooth nearest-colour chain - good on a selection.
+  Single key       plain sort by one key (lightness, hue, R, G, B ...).
+  Reverse          reverses the order.
+
+Apply to:
+  Whole palette         every colour; empty slots go to the end.
+  Selected (gathered)   the selected colours are sorted and pulled together
+                        into ONE block starting at the first selected slot;
+                        everything else keeps its order and closes the gaps.
+                        Select all the reds anywhere -> one red section.
+  Opens on Selected when 2+ colours are selected. Selecting in the grid
+  while the window is open switches to Selected; clearing -> Whole palette.
+  "(N selected)" shows the current count.
+
+Method options (change with the method), e.g. Curved ramps:
+  Max step     longest link allowed between neighbours
+  Max bend     how sharply a ramp may change direction
+  Hue/chroma weight  how much hue changes cost vs lightness changes
+
+Order colours by / Lightest-Darkest first   order inside each ramp.
+Ramp order   Greys first then hue / Original position / Largest first /
+             By key.
+Outliers     leftover single colours: join nearest ramp / collect at the
+             end / leave single.
+Min ramp size  smaller groups count as outliers.
+
+Preview: ON   shows the sorted result live (selection locked).
+Apply         keeps it as a "Reorder ..." history entry. The window stays
+              open - select the next family and reorder again.
+Cancel / Esc  restores the pre-preview order.
+
+COLORMAP hand edits follow their colours when you reorder.
+
+------------------------------------------------------------------------------
+ 3.5 PAINT TOOLS   (Paint button)
+------------------------------------------------------------------------------
+The only place palette colours change: ramps, fills, single cells, and
+scratch colours dragged onto the grid.
+
+Paint session - edits stay pending until Snapshot
+  Ramp Apply, Fill selected, single-cell edits and scratch drops change the
+  palette at once but add no history entry, so you can work through
+  different selections without filling the history.
+  Snapshot   all edits since the last snapshot -> ONE "Painted: ..." entry
+  Revert     throw them away (the selection is kept)
+  Hide selection outline   hide the selection / ramp-target / picked-cell
+             outlines; the selection stays active
+  The line between shows what is pending ("Unsnapshotted: 2 ramps, 1 fill").
+  Closing with pending edits asks Snapshot / Discard / Cancel. History is
+  locked while edits are pending.
+
+Filters...  (Paint session row) - classic filters on the selected colours
+  (blank cells skipped). List of filters on the left, options on the right,
+  before (top) / after (bottom) strip of the selection underneath.
+  Preview: ON   live on the grid; change the selection while previewing and
+                it re-runs on the new cells
+  Apply         writes it (pending paint edit, "filters" in the summary)
+  Reset         this filter's defaults        Cancel / Esc  restore
+  Each filter remembers its settings between sessions.
+
+  Levels                input black / gamma / white -> output black / white,
+                        RGB or a single channel.
+  Brightness / Contrast Perceptual (OKLab lightness - hues stay steadier) or
+                        Classic (RGB). Contrast pivot: mid grey or the
+                        selection's average.
+  Hue / Saturation / Lightness   hue shift (degrees), saturation and
+                        lightness %. OKLCH (perceptual) or HSL (classic).
+  Colorise              one hue, each colour keeps its lightness. Hue /
+                        saturation, or take it from the Paint fill colour.
+                        Strength mixes with the original.
+  Black & white         Doom / Rec.601, Rec.709, OKLab lightness, or Custom
+                        R / G / B % (channel mixer). Amount.
+  Invert                RGB, or Lightness only (dark red -> light red).
+  Gradient map          maps each colour's lightness onto the Paint window's
+                        current ramp - e.g. turn a brown family green with
+                        the same shading. Stretch / direction / amount.
+  Even out ramp         spaces lightness evenly, keeping hue and chroma.
+                        Lightness order keeps every colour in its slot;
+                        Index order treats the selection as one ramp.
+  Temperature / Tint    warm / cool and green / magenta shifts.
+  Posterise             N levels per RGB channel, or lightness only.
+  Perceptual modes gamut-map: out-of-range colours lose chroma, never hue.
+
+Clipboard row - Cut / Copy / Paste / Insert paste buttons, and keys:
+  Ctrl+C        copy the selected colours (index order, blanks skipped, one
+                gap-free block). Works in any tool; also puts the hex list
+                on the system clipboard.
+  Ctrl+X        cut: copy, then the cells become empty.
+  Ctrl+V        paste over the cells starting at the first selected cell
+                (or the cell under the mouse). Popup if it would run past
+                index 255.
+  Ctrl+Shift+V  insert paste in front of the target colour. Colours from
+                there are pushed right into empty slots after it; if those
+                run out, the nearest empty slots before it are used (the
+                colours in between shift left). So cut + insert paste works
+                as a move. Popup "No room to insert" if the palette doesn't
+                have enough empty slots.
+  The same buttons are in the side panel's Clipboard section.
+  Pasted colours become the selection. A hex list copied in another program
+  (or the Scratch palette) since your last Ctrl+C is pasted instead.
+  Cuts and pastes are pending edits until Snapshot.
+
+Double-click a cell - colour picker on just that cell (live). Your
+  selection is left alone. White dashed box = the picked cell. Double-click
+  another cell to move the picker. Blank cells work too.
+
+Ramp - fills the SELECTED grid cells (blank or filled), in index order,
+one step per cell, with a gradient.
+  Bar: click to add a node, drag nodes, right-click / Del removes,
+       double-click opens the picker. Start and end are fixed at the ends.
+  Node row: swatch (click = picker), hex box, position %, Delete node.
+  Blend: OKLab (even steps, default) / RGB (like paint programs, Doom) /
+         OKLCH (goes round the hue wheel - vivid in-betweens).
+  Ease: Linear / In / Out / In-out + Strength; applies to the whole ramp
+        or each segment.
+  Reverse, Use selection ends (start/end = first/last selected colours).
+  Steps strip: what will be written; dot = repeats a step, corner = colour
+        already in the palette elsewhere.
+  Preview / Apply / Cancel (Apply = pending edit). Load / Save ramp (.json).
+
+Fill - one colour into every selected cell.
+  Swatch (click = picker), hex box, Picker..., From selection (first
+  selected colour), Fill selected.
+
+Clipboard (side panel, under Tools): Cut / Copy / Paste / Insert paste and
+  the clipboard count. Copy works any time; the rest need the Paint or Move
+  tools open (Paste is Paint-only). Same rules as the keys (see 3.5).
+
+------------------------------------------------------------------------------
+ 3.6 VIEW
+------------------------------------------------------------------------------
+Fit  (or F / double middle-click)  fit the grid to the window.
+Wheel zooms toward the cursor, middle-drag pans. Checker = empty slot.
+
+------------------------------------------------------------------------------
+ 3.7 SELECTION & HISTORY   (visible in both modes)
+------------------------------------------------------------------------------
+Selecting in the grid:
+  click / drag = select   Shift = add   Ctrl = toggle   Ctrl+A = all
+  Esc = clear (or cancel an open preview)
+  Blank cells can be selected too (ramp / fill targets).
+
+Back       previous history entry (also Ctrl+Z).
+Remove     delete the current history entry.
+Collapse   keep only the current entry as the new #0 (asks first).
+Clear selection.
+History list: click any entry to jump to it.
+
+------------------------------------------------------------------------------
+ 3.8 EXPORT
+------------------------------------------------------------------------------
+Writes what the grid shows: with the Cull tools open, the culled result
+(packed if Align); with no tool open, the palette as it is. Paused while
+Move / Reorder / Paint is open.
+Pick a format, click Export...:
+  DoomTools playpal.png (tinted)    full 14-palette PLAYPAL image
+  DoomTools blank playpal.png
+  SLADE pal0.png / pal0.pal         just palette 0
+  SLADE playpal.pal (tinted)        all 14 palettes
+  Analysis PNGs                     images showing what was culled (use
+                                    with the Cull tools open)
+Split per set / cluster - analysis PNGs per group.
+Removed / empty slots: transparent in PNGs, green (0,255,0) in .pal.
+
+------------------------------------------------------------------------------
+ 3.9 PRESETS + HELP
+------------------------------------------------------------------------------
+Save preset... / Load preset...  store matching, sort, export and COLORMAP
+settings as a .json (no window sizes or files). Help = full in-app help.
+
+
+==============================================================================
+ 4. COLORMAP MODE
+==============================================================================
+
+------------------------------------------------------------------------------
+ 4.1 WHAT A COLORMAP IS
+------------------------------------------------------------------------------
+Doom never darkens colours mathematically. For every palette colour the
+COLORMAP lists which palette colour to draw at each of 32 light levels:
+
+  row 0  = full bright (the colour itself)
+  row 31 = darkest (used for very dark sectors and far away surfaces)
+  row 32 = invulnerability (separate; view-only in cleanpal for now)
+  row 33 = unused all-black row (never shown; exports still write it)
+
+One colour's 32 steps = its FADE. cleanpal GENERATES every fade from the
+palette automatically. Your HAND EDITS sit on top. Every cell must be a
+palette colour - lighting can never invent a colour.
+
+------------------------------------------------------------------------------
+ 4.2 THE FADE VIEW AND ITS TOOLBAR (under the palette grid)
+------------------------------------------------------------------------------
+Divider bar: drag to resize grid vs fade view (remembered).
+  "Palette" button   minimise the grid -> fade view gets the full height
+  "Fades" button     shrink the fade view to just the bar
+  Click again or double-click the bar to restore.
+
+Fades / Matrix
+  Fades    one strip per SELECTED colour (select colours in the grid
+           first). Left = colour + index number, then rows 0-31 left to
+           right, numbered along the top. Wheel scrolls long selections.
+  Matrix   the whole COLORMAP: 256 columns (index 0 left) x 32 rows (full
+           bright top, darkest bottom). Overview for spotting problems;
+           edit in Fades.
+
+Markers (H)
+  On:  corner triangle (Fades) / square (Matrix) = HAND-SET step
+       (black or white just for contrast - no meaning)
+       red slash = hand-set target was removed -> auto used meanwhile
+       coloured outline (Fades) / bar (Matrix) = diagnostic flag
+  Off: raw colours only. Hover always shows the details.
+
+Tools (act on cells in Fades or Matrix, rows 0-31 only):
+  Paint   click / drag cells -> set them to the BRUSH colour.
+  Erase   click / drag -> back to automatic (removes the hand edit).
+  Pick    click a cell -> its colour becomes the brush (eyedropper).
+  Ctrl + Paint/Erase in Fades = that step for EVERY selected colour.
+  Ramp    choose strips for the fade Ramp tool (see 4.2a).
+  Each stroke = one history entry; Back keeps your selection.
+
+Brush: RIGHT-CLICK a palette cell in the grid (yellow dashed outline),
+       or use Pick. The swatch + index show on the toolbar.
+
+Hover any cell: index, row, target colour, auto / hand-set, the ideal
+colour it should be, and any problem.
+
+------------------------------------------------------------------------------
+ 4.2a RAMP TOOL ON FADES  (Ramp tool + "Ramp tool..." on the fade toolbar)
+------------------------------------------------------------------------------
+Design fades with the Ramp tool instead of painting cell by cell.
+
+Choosing strips (Ramp tool, Fades view):
+  click an index number   whole strip (rows 0-31)
+  click a cell            that strip from that row to 31
+  Ctrl + click            add another strip with its OWN start row, e.g.
+                          112 whole, 113 from row 20, 114 from row 30.
+                          Ctrl + click a chosen index number removes it.
+  Shift + click an index  whole strips from the last clicked to this one
+  Gold outline = reference strip (last clicked), cyan = the others.
+  Rows before each start are dimmed - they are never changed.
+
+"Ramp tool..." opens the Ramp tool in FADE MODE:
+  Start node   LOCKED - the colour the fade continues from: the colour
+               itself (whole strip) or what the row before the start shows.
+  End node     row 31. Add nodes, blend space and easing as normal.
+  RELATIVE     each node is stored as a change from the start colour
+               (lightness ratio, colourfulness ratio, hue turn), so every
+               strip gets the same SHAPE of fade from its own colour, spread
+               over its own rows. You edit on the reference strip.
+  Steps strip  top row = smooth ramp, bottom row = the palette colour each
+               step snaps to (COLORMAP cells must be palette colours).
+               Red underline = poor snap.
+  Add missing colours (budget)  adds new colours to EMPTY palette slots
+               that fix the worst snaps across all chosen strips (cull +
+               Snapshot first if "Free slots" is 0).
+  Preview / Apply / Cancel  Apply writes each strip's range as hand-set
+               steps - one history entry. Paint / Erase still work after.
+  Reverse and Use selection ends are off in fade mode.
+
+------------------------------------------------------------------------------
+ 4.3 COLORMAP PANEL
+------------------------------------------------------------------------------
+Status line   says whether a COLORMAP is loaded (from the WAD you opened or
+              Open COLORMAP...). A loaded one is only used for compare /
+              import - the working one is always generated + your edits.
+
+Open COLORMAP...      WAD (COLORMAP lump), raw .lmp, or a 256 x 32-34 image.
+Import as hand edits  copies the loaded COLORMAP's choices (rows 0-31) in as
+                      hand edits wherever they differ from the generated
+                      ones (matched by colour). Use to keep a hand-tuned
+                      COLORMAP you already have.
+
+Matching
+  Perceptual (OKLab)   default - keeps hue better in the darks.
+  Classic (RGB)        exactly Freedoom's / id's generator. Use for
+                       vanilla behaviour.
+Fade curve      1 = linear like Doom. >1 stays bright longer then drops;
+                <1 darkens sooner.
+Fade toward     black by default. A colour here = tinted darkness.
+Auto-fill smoothly between hand-set steps
+                With it on, if you hand-set e.g. rows 10 and 20 of a
+                colour, the steps in between follow a smooth path through
+                your picks (instead of ignoring them). Usually leave on.
+Show invulnerability + dark rows
+                Off (default) hides the invulnerability column / row and
+                its dropdown. On shows the I column (view-only) and the
+                Invulnerability dropdown (Inverse grey = Doom's formula /
+                From loaded COLORMAP / None).
+
+Export... with
+  COLORMAP lump (.lmp)          the 8704-byte lump for your WAD
+  COLORMAP image (256x34 .png)  pixels = palette colours
+  The export matches the palette an Export would write NOW (culls packed
+  or emptied the same way). Always export the PLAYPAL with it.
+
+------------------------------------------------------------------------------
+ 4.4 EDIT FADES OF SELECTED COLOURS
+------------------------------------------------------------------------------
+All act on the colours selected in the grid, rows 0-31.
+
+Full bright / Normal
+  Full bright = never darkens (lights, lava, glowing bits). Normal undoes.
+  Strips show "FB" next to the index.
+
+Clear hand edits
+  The selection back to fully automatic (also removes limits and curves).
+
+Fade down through the selection itself
+  Treat the selection as a ramp. Each colour darkens by stepping DOWN
+  through the other selected colours.
+    Lightness / Index   order of the ramp (Lightness = lightest first,
+                        usually right)
+    steps/level         how far down the ramp per light level.
+                        0.5 = one colour every 2 levels. Higher = faster.
+    Black / Auto        what happens past the darkest selected colour:
+                        Black jumps to black, Auto hands over to the normal
+                        automatic fade (Auto is usually better - Black
+                        makes the darkest colours go black very early).
+    Apply               writes the result as hand-set steps (you can apply
+                        again with other numbers - it replaces it).
+  Best first fix for a ramp whose fades wander into other colours
+  (e.g. light blues turning grey).
+
+Limit which colours their fades may use
+  1. Select the colours fades are ALLOWED to use -> Store selection as
+     targets (orange dashed outline in the grid).
+  2. Select the colours to restrict -> Limit to targets (+ fade colour).
+  Their automatic fades now only choose from that set (plus black).
+  Strips show "L". Remove limit undoes. Stops e.g. reds sliding into
+  muddy browns without hand-painting anything.
+
+Fade curve  Set / Clear
+  A fade curve just for the selected colours (e.g. let lava stay bright
+  longer). Overrides the panel's global Fade curve for them.
+
+Copy fade shape / Paste shape to selected
+  Copy takes the FIRST selected colour's fade as a relative shape
+  ("this much darker, this much hue change" per step). Paste applies that
+  shape to each selected colour, starting from its own colour. Tune one
+  colour by hand, then give the rest the same behaviour.
+
+------------------------------------------------------------------------------
+ 4.5 CREATE FADE COLOURS
+------------------------------------------------------------------------------
+When the palette simply doesn't contain the right dark colours, this works
+out which NEW colours would improve the fades the most.
+
+  Whole palette / Selected   which fades to improve
+  Budget (new colours)       max colours to add
+  Free (empty) slots: N      must be > 0 - cull + Snapshot first
+                             (with Align, empty slots go to the end)
+  Find...  opens a list of proposed colours: what each serves (how many
+           colours, which rows) and the overall error before -> after.
+           Untick any, then Add to palette. They go into empty slots and
+           the COLORMAP starts using them immediately.
+  If Palettised preview is open with images, steps are weighted by how
+  much each colour is actually used in those images.
+
+------------------------------------------------------------------------------
+ 4.6 DIAGNOSTICS
+------------------------------------------------------------------------------
+Highlight problem steps   show/hide the coloured outlines (needs Markers).
+Counts (whole palette):
+  Early crush (red)     drops to near black too soon
+  Hue drift (orange)    lands on a different hue than it should
+  Big jump (yellow)     a much bigger brightness step than ideal (banding)
+  Far from ideal (purple)  just a poor match
+List: worst colours first. Click one to select it and show its fade.
+Use as a to-do list: work down it, re-check counts after each fix.
+
+
+==============================================================================
+ 5. OTHER WINDOWS
+==============================================================================
+
+COLOUR PICKER   (Picker... in the Paint tools / double-click a ramp node /
+                 swatches)
+  Modes: RGB sliders, HSL sliders, HSL wheel - all edit the same colour.
+  Fields: R G B, H S L, R# G# B#, # hex (accepts EBEBEB, #ebe, 235,235,235).
+  Shift+drag = fine, Ctrl+drag = lock axis, arrows nudge, wheel steps.
+  Swatch: left new, right old (click right half to revert).
+  Eyedropper: any pixel on screen (magnifier). Recent colours row.
+  Right-click any field: copy/paste, copy as hex / R,G,B, paste colour.
+  "On top" keeps it above other windows.
+
+SCRATCH PALETTE   (top bar)
+  Temporary swatches in named sets (New / Rename / Delete).
+  Add: + Picker, + Selected (grid), Eyedropper, Ctrl+V, or drag cells from
+       the grid onto it (works any time).
+  Use: click = send to picker / active ramp node; drag onto the ramp bar =
+       set/add a node. Writing into the palette (drag onto a grid cell,
+       Fill selected) only works while the Paint tools are open.
+  Right-click a swatch: copy hex / R,G,B, paste here, send to picker,
+       remove. Drag to reorder. Import / export .gpl or hex text.
+
+
+==============================================================================
+ 6. PALETTISED PREVIEW
+==============================================================================
+Open folder...  every PNG in the folder and its subfolders (Type: Loose).
+Open WAD...     its graphics (All / Patches / Sprites / Flats / Graphics)
+                plus TEXTURE1 / TEXTURE2 when present:
+  Textures are composited from their patches. Each TEXTUREx comes from the
+  WAD if it has it, else the IWAD (WAD lists use the WAD's PNAMES, else the
+  IWAD's). Patches: WAD first, then IWAD. Missing patches = transparent gap,
+  named in the info line, red name in Grid. "All" = the WAD's own graphics
+  and the textures it defines itself.
+  Graphics decode with the WAD's PLAYPAL, else the IWAD's.
+Up/Down cycles.
+Shows images converted to the CURRENT palette, live.
+Space flips Palettised / Original. Single / Grid (cols x rows).
+Dither = Floyd-Steinberg. Wheel zoom, middle-drag pan, F fit.
+
+Apply COLORMAP lighting (tick box):
+  Sector light 0-255 and Distance -> the COLORMAP row vanilla Doom would
+  use (shown in the info line, e.g. "row 13").
+  Wall / sprite vs Floor / ceiling - different distance rules.
+  Diagonal / East-West (one band darker) / North-South (one band brighter)
+  - Doom's fake contrast on straight walls.
+  Corridor (single view): the image as a wall receding into the distance -
+  every light row at once. Best way to spot banding / colour shifts.
+  Space compares with loaded COLORMAP: Space flips between your current
+  PLAYPAL+COLORMAP and the loaded original at the same light.
+  (Vanilla 320x200 maths; port options / GL renderers may differ.)
+
+
+==============================================================================
+ 7. WORKFLOWS
+==============================================================================
+
+A. Free palette slots
+  1. PLAYPAL mode -> Cull. Tick Remove exact. Tick Remove similar,
+     CIEDE2000, raise Tolerance slowly, watch the X/O markers and stats.
+  2. Optional: Cull Selected only, to thin one ramp at a time.
+  3. Check textures in Palettised preview (Space to compare).
+  4. Tick Align, click Snapshot -> free slots at the end.
+
+B. Tidy the layout   (after A)
+  1. Reorder (Take snapshot and continue if asked).
+  2. Curved ramps, Whole palette, Preview, Apply.
+  3. Or select one family (all reds) in the grid, Selected (gathered),
+     Apply - then the next family. Close when done.
+  4. Fine-tune single colours with Move: drag, Apply.
+
+C. Build a new ramp in free slots
+  1. Paint. Select the empty cells (index order = ramp order).
+  2. Set start / end, add nodes, choose blend / ease -> Apply.
+  3. Or Fill them with one colour; double-click single cells to touch up.
+  4. Snapshot when happy (Revert if not).
+
+D. Fix the COLORMAP
+  1. Mode -> COLORMAP. Look at Diagnostics; click the worst colour.
+  2. Select that colour's whole ramp in the grid (e.g. all 16 blues).
+  3. Try Fade down through the selection (Lightness, 0.5, Auto) -> Apply.
+  4. Still wrong? Store targets + Limit to targets, or paint steps.
+  5. Whole hue missing darks? Free slots (A), then Create fade colours.
+  6. Check in Palettised preview with lighting + Corridor.
+
+E. Ship it
+  1. PLAYPAL mode, no tool open (or Cull open for a culled export):
+     Export the palette (DoomTools playpal.png or .pal).
+  2. COLORMAP mode: Export the COLORMAP lump (.lmp). Use both together.
+  3. Save project to keep all history and hand edits.
+
+
+==============================================================================
+ 8. KEYS AND MOUSE
+==============================================================================
+Grid:      click/drag select, Shift add, Ctrl toggle, Ctrl+A all, Esc clear
+           wheel zoom, middle-drag pan, double-middle / F fit
+           M = Move tools on / off, Del delete/restore (Cull tools)
+           Ctrl+C copy  Ctrl+X cut  Ctrl+V paste over (Paint)
+           Ctrl+Shift+V insert paste (Paint / Move)
+           Ctrl+Z back / undo move (Move tools)
+           double-click (Paint tools) = picker on that cell
+           right-click (COLORMAP mode) = brush colour
+Tools:     Esc closes the Cull / Move window (cancels a preview first in
+           Reorder / Paint)
+Fade view: Paint/Erase/Pick click-drag, Ctrl = all selected, H markers,
+           wheel scrolls strips
+Fields:    right-click menu, Ctrl+A select all
+Preview:   Space flip, Up/Down next, F fit, N names
+
+
+==============================================================================
+ 9. THINGS THAT COMMONLY CONFUSE
+==============================================================================
+- "Culled colours are still there" - culling only MARKS. Snapshot (in the
+  Cull tools) applies it.
+- "The X / O markers vanished" - the Cull tools are closed. Culling only
+  runs while that window is open; reopen it and the marks come back.
+- "Move / Reorder / Paint asks for a snapshot" - something is still marked
+  (X / O / deleted). Changing the palette first would change which colours
+  culling keeps.
+- "Can't step back further" - Move / Reorder / Paint only step through
+  their own session. Close the tool to go back further.
+- "Dropping a scratch colour on the grid does nothing" - open the Paint
+  tools first.
+- "Ctrl+C / Ctrl+V copied text, not colours" - a text box had the keyboard
+  focus. Click the grid (or any non-text part of the window) first; inside
+  a text box the keys work on its text.
+- "Paint edits aren't in the history" - they stay pending until you click
+  Snapshot in the Paint tools.
+- "Free (empty) slots: 0" - culls aren't applied yet. Tick Align, Snapshot.
+- Fade view empty - select colours in the grid first.
+- Triangle colour (black / white) means nothing - it's contrast only.
+- Row 31 looks black for most colours but is a real light level.
+- Classic matching = original Doom fades. Perceptual will differ (on
+  purpose) - choose Classic if you want vanilla.
+- A loaded COLORMAP is never used as-is: it's for compare / import. With
+  no COLORMAP in the opened file, the IWAD's is the reference.
+- "TEXTURE2 shows IWAD textures" - the WAD has no TEXTURE2, so the IWAD's
+  is listed. "All" only shows what the WAD defines itself.
+- COLORMAP mode works on the current snapshot - culling is off there.
+- Exports always write the full 34-row COLORMAP even though you only see
+  32 rows.
+- A double-clicked cleanpal.bat closes instantly on errors - run it from a
+  console (type cleanpal) to read the message.
+==============================================================================
