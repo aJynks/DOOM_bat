@@ -681,8 +681,8 @@ class PaintTool(RampTool):
         self.btn_frame.grid(row=9, column=0, sticky="ew")
 
         # clipboard: cut / copy / paste over / insert paste
-        cf = ttk.LabelFrame(self.win, text="Clipboard  (Ctrl+X / Ctrl+C / Ctrl+V / "
-                                           "Ctrl+Shift+V insert)", padding=6)
+        cf = ttk.LabelFrame(self.win, text="Clipboard  (Ctrl+X cut / Ctrl+C copy / Ctrl+V "
+                                           "insert / Ctrl+Shift+V paste over)", padding=6)
         cf.grid(row=7, column=0, sticky="ew", padx=8, pady=(8, 0))
         ttk.Button(cf, text="Cut", command=a.clip_cut).pack(side="left")
         ttk.Button(cf, text="Copy", command=a.clip_copy).pack(side="left", padx=(6, 0))

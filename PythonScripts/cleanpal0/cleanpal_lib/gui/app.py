@@ -91,6 +91,7 @@ class App(ToolHostMixin, SortMixin, MenusMixin, ToolsMixin, ProjectMixin, CmapMi
         self._filt_backup = None      # Paint filter preview
         self.filter_win = None
         self.clip = []                # copied colours (Ctrl+C / Ctrl+X)
+        self.playpals = None          # Playpals reference window
         self._clip_sys = None         # text we last put on the system clipboard
         self.range_var = tk.StringVar()
         self.tol = {m: float(self.s.get("tol_" + m, DEFAULT_TOL[m])) for m in METRICS}
@@ -1378,6 +1379,8 @@ class App(ToolHostMixin, SortMixin, MenusMixin, ToolsMixin, ProjectMixin, CmapMi
         self.close_tool(quiet=True, force=True)
         if self.preview is not None:
             self.preview.store_state()
+        if self.playpals is not None:
+            self.playpals.close()
         for w in (self.ramp, self.picker, self.scratch):
             if w is not None:
                 w.close()

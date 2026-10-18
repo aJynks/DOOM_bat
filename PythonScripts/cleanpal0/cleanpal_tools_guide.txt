@@ -1,5 +1,5 @@
 ==============================================================================
- cleanpal 2.7.2 - TOOLS GUIDE
+ cleanpal 2.8.2 - TOOLS GUIDE
  Every control in the side panel (both modes), the tool windows, the top
  bar, the fade view toolbar and the preview window - what it does and when
  to use it.
@@ -199,7 +199,7 @@ else draws a selection box.
   be stepped while moves are unapplied.
 
 Clipboard (Move): Ctrl+X cut - the colours come out and the rest closes up;
-  Ctrl+C copy; Ctrl+Shift+V insert paste in front of the first selected
+  Ctrl+C copy; Ctrl+V insert paste in front of the first selected
   cell (uses empty slots, popup if there's no room). Overwrite paste is Paint-only. Cut +
   insert paste = move a whole family somewhere else. See 3.5 for details.
 
@@ -303,10 +303,10 @@ Clipboard row - Cut / Copy / Paste / Insert paste buttons, and keys:
                 gap-free block). Works in any tool; also puts the hex list
                 on the system clipboard.
   Ctrl+X        cut: copy, then the cells become empty.
-  Ctrl+V        paste over the cells starting at the first selected cell
+  Ctrl+Shift+V  paste over the cells starting at the first selected cell
                 (or the cell under the mouse). Popup if it would run past
                 index 255.
-  Ctrl+Shift+V  insert paste in front of the target colour. Colours from
+  Ctrl+V        insert paste in front of the target colour. Colours from
                 there are pushed right into empty slots after it; if those
                 run out, the nearest empty slots before it are used (the
                 colours in between shift left). So cut + insert paste works
@@ -342,6 +342,24 @@ Fill - one colour into every selected cell.
 Clipboard (side panel, under Tools): Cut / Copy / Paste / Insert paste and
   the clipboard count. Copy works any time; the rest need the Paint or Move
   tools open (Paste is Paint-only). Same rules as the keys (see 3.5).
+
+Playpals (Tools panel, under Paint) - a reference window for OTHER
+  palettes. It isn't one of the exclusive tools: it opens alongside any of
+  them.
+  Add...        pal0s from WADs, .pal, pal0.png, playpal.png or projects
+                (several at once). The IWAD's PLAYPAL is always first. The
+                list is remembered between sessions.
+  Single / Tile one palette or C x R at once; Up / Down / wheel cycles.
+  Mark colours already in my palette   white corner = already in yours.
+  Select colours (click / drag / Shift / Ctrl / Ctrl+A) and:
+    Copy (Ctrl+C)          onto the shared clipboard
+    Paste into Paint       copy + paste over at the main grid's first
+                           selected cell
+    Insert into Paint      copy + insert paste there
+    Ctrl+V / Ctrl+Shift+V  insert / paste over the clipboard
+    drag one colour onto a main-grid cell = set that cell (Paint)
+  Pasting when Paint isn't open offers to open it (clean-snapshot check
+  included).
 
 ------------------------------------------------------------------------------
  3.6 VIEW
@@ -687,8 +705,8 @@ E. Ship it
 Grid:      click/drag select, Shift add, Ctrl toggle, Ctrl+A all, Esc clear
            wheel zoom, middle-drag pan, double-middle / F fit
            M = Move tools on / off, Del delete/restore (Cull tools)
-           Ctrl+C copy  Ctrl+X cut  Ctrl+V paste over (Paint)
-           Ctrl+Shift+V insert paste (Paint / Move)
+           Ctrl+C copy  Ctrl+X cut  Ctrl+V insert paste (Paint / Move)
+           Ctrl+Shift+V paste over (Paint)
            Ctrl+Z back / undo move (Move tools)
            double-click (Paint tools) = picker on that cell
            right-click (COLORMAP mode) = brush colour

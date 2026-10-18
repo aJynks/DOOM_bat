@@ -220,8 +220,8 @@ class ToolsMixin:
         self.recompute()
 
     # ---------------------------------------------------------- clipboard
-    # Ctrl+C copy (anywhere), Ctrl+X cut, Ctrl+V paste over, Ctrl+Shift+V
-    # insert paste (Paint; Move: cut + insert only). One gap-free block,
+    # Ctrl+C copy (anywhere), Ctrl+X cut, Ctrl+V insert paste, Ctrl+Shift+V
+    # paste over (Paint; Move: cut + insert only). One gap-free block,
     # index order, no sorting.
     def clip_text(self):
         n = len(self.clip)
@@ -244,16 +244,21 @@ class ToolsMixin:
         if not idx:
             self.status_var.set("Select colours to copy first.")
             return False
-        self.clip = [self.rgbs[i] for i in idx]
+        self.clip_set([self.rgbs[i] for i in idx])
+        return True
+
+    def clip_set(self, colours, src=None):
+        """Put colours on cleanpal's clipboard (and the system one as hex)."""
+        self.clip = [tuple(c) for c in colours]
         self._clip_sys = "\n".join(hex_of(c) for c in self.clip)
         try:
             self.root.clipboard_clear()
             self.root.clipboard_append(self._clip_sys)
         except self.tk.TclError:
             pass
-        self.status_var.set("Copied %d colour(s)." % len(self.clip))
+        self.status_var.set("Copied %d colour(s)%s." % (len(self.clip),
+                                                        (" from " + src) if src else ""))
         self._tool_refresh_win()
-        return True
 
     def _clip_source(self):
         """Colours to paste: cleanpal's clipboard, or a hex list someone put on
@@ -317,15 +322,27 @@ class ToolsMixin:
             self.cm.invalidate(gone)
             self.cm_changed()
             self.selection = set()
-            self.status_var.set("Cut %d colour(s) - the rest closed up; Ctrl+Shift+V "
+            self.status_var.set("Cut %d colour(s) - the rest closed up; Ctrl+V "
                                 "inserts them somewhere else." % n)
         self.recompute()
 
     def clip_paste(self, insert=False):
-        if self._clip_busy() or not self._clip_tool_ok("Paste"):
+        if self._clip_busy():
             return
+        if self.tool not in ("paint", "move"):
+            # offer to open Paint (it does the clean-snapshot check itself)
+            if self.cmap_mode():
+                self.status_var.set("Paste works in the Paint tools (PLAYPAL mode).")
+                return
+            k = self._ask_buttons(
+                "Paste needs the Paint tools",
+                "Pasting colours into the working palette happens in the Paint tools. "
+                "Open them now and paste?",
+                [("open", "Open Paint and paste"), ("cancel", "Cancel")])
+            if k != "open" or not self.open_tool("paint"):
+                return
         if self.tool == "move" and not insert:
-            self.status_var.set("Overwrite paste is in the Paint tools - use Ctrl+Shift+V "
+            self.status_var.set("Overwrite paste is in the Paint tools - use Ctrl+V "
                                 "to insert.")
             return
         cols, src = self._clip_source()
@@ -411,9 +428,19 @@ class ToolsMixin:
 
     def _bind_clip_keys(self, w):
         for seq, what in (("<Control-c>", "copy"), ("<Control-x>", "cut"),
-                          ("<Control-v>", "paste"), ("<Control-V>", "insert"),
-                          ("<Control-Shift-V>", "insert"), ("<Control-Shift-v>", "insert")):
+                          ("<Control-v>", "insert"), ("<Control-V>", "paste"),
+                          ("<Control-Shift-V>", "paste"), ("<Control-Shift-v>", "paste")):
             w.bind(seq, lambda e, k=what: self._on_clip_key(e, k))
+
+    # ---------------------------------------------------------- Playpals
+    def open_playpals(self):
+        if self.playpals is not None:
+            self.playpals.win.deiconify()
+            self.playpals.win.lift()
+            return self.playpals
+        from .playpals_tool import PlaypalsWindow
+        self.playpals = PlaypalsWindow(self)
+        return self.playpals
 
     # ---------------------------------------------------------- Paint filters
     def filter_open(self):

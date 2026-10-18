@@ -307,6 +307,26 @@ SCRATCH PALETTE  (Scratch palette... button)
   Import: hex text, GIMP .gpl, JASC .pal or raw .pal (as a new set).
   Export: .gpl or hex .txt. Sets are kept between sessions and in projects.
 
+PLAYPALS  (Tools panel -> Playpals... - a reference window, opens alongside any tool)
+  Browse other palettes and copy colours out of them.
+  Add...       load pal0s: WAD PLAYPAL, SLADE .pal / pal0.png, DoomTools
+               playpal.png, a .cleanpal project (its current entry). Pick
+               several at once. The IWAD's PLAYPAL is always listed first.
+               The list is remembered.
+  Remove / Clear   take palettes off the list (the IWAD stays).
+  Single / Tile    one big palette, or C x R at once. Up / Down (or the
+               wheel) = next palette; in Tile the active one is outlined.
+  Mark colours already in my palette   white corner = exists in yours;
+               hover also says "also in working palette at #n".
+  Select like the main grid (click / drag / Shift / Ctrl / Ctrl+A), then:
+    Copy (Ctrl+C)        to the shared clipboard (index order, no gaps)
+    Paste into Paint     copy + paste over at the main grid's first
+    Insert into Paint    selected cell / copy + insert paste
+    Ctrl+V / Ctrl+Shift+V in this window insert / paste over the clipboard.
+    Drag one colour onto a main-grid cell to set it (Paint tools).
+  Pasting outside the Paint tools offers to open them (with the usual
+  clean-snapshot check). Pastes are pending Paint edits until Snapshot.
+
 CLIPBOARD  (side panel buttons + Paint / Move windows; Ctrl+C works anywhere)
   Ctrl+C  copy     the selected colours, index order, blank cells skipped -
                    one gap-free block. Also put on the system clipboard as
@@ -314,10 +334,10 @@ CLIPBOARD  (side panel buttons + Paint / Move windows; Ctrl+C works anywhere)
   Ctrl+X  cut      Paint: copy, then the cells become empty.
                    Move: take them out; the rest closes up, free slots go
                    to the end.
-  Ctrl+V  paste    Paint only: write the block over the cells starting at
-                   the first selected cell (or the cell under the mouse).
-                   A popup says so if it would run past index 255.
-  Ctrl+Shift+V  insert paste   Paint and Move: the block goes in front of
+  Ctrl+Shift+V  paste over   Paint only: write the block over the cells
+                   starting at the first selected cell (or the cell under
+                   the mouse). A popup says so if it would run past 255.
+  Ctrl+V  insert paste   Paint and Move: the block goes in front of
                    the target colour. Colours from there are pushed right
                    into the empty slots after it; if those run out, the
                    nearest empty slots before it are used (colours between

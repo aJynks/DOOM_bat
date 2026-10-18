@@ -3,7 +3,7 @@
 import os
 
 
-VERSION = "2.7.2"
+VERSION = "2.8.2"
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "cleanpal")
 SETTINGS_PATH = os.path.join(APP_DIR, "cleanpal_settings.json")

@@ -243,7 +243,7 @@ class MoveTool(_ToolWin):
         ttk.Label(cf, textvariable=self.clip_var, foreground="#666").pack(side="left",
                                                                            padx=(10, 0))
         ttk.Label(f, text="Ctrl+X cut (the rest closes up)   Ctrl+C copy\n"
-                          "Ctrl+Shift+V insert paste at the first selected cell",
+                          "Ctrl+V insert paste at the first selected cell",
                   foreground="#888").pack(anchor="w", pady=(4, 0))
         app._bind_clip_keys(win)
         focus_on_click(win)
@@ -307,9 +307,14 @@ class ToolHostMixin:
             ttk.Label(tf, text=TOOL_HINT[t], foreground="#666").grid(
                 row=row, column=1, sticky="w", padx=(8, 0), pady=(0 if row == 0 else 4, 0))
         self._tool_btn_bg = self.tool_btns["cull"].cget("background")
+        r = len(TOOLS)
+        ttk.Button(tf, text="Playpals", width=9, command=self.open_playpals).grid(
+            row=r, column=0, sticky="w", pady=(4, 0))
+        ttk.Label(tf, text="browse other palettes, copy colours", foreground="#666").grid(
+            row=r, column=1, sticky="w", padx=(8, 0), pady=(4, 0))
         ttk.Label(tf, text="Move, Reorder and Paint need a clean snapshot\n"
                            "(no pending culls). M = Move tools.",
-                  foreground="#888").grid(row=len(TOOLS), column=0, columnspan=2,
+                  foreground="#888").grid(row=r + 1, column=0, columnspan=2,
                                           sticky="w", pady=(8, 0))
         return tf
 
@@ -330,7 +335,7 @@ class ToolHostMixin:
         self.side_clip_var = self.tk.StringVar(value=self.clip_text())
         ttk.Label(cf, textvariable=self.side_clip_var).pack(anchor="w", pady=(6, 0))
         ttk.Label(cf, text="Ctrl+C copy (any tool)   Ctrl+X cut\n"
-                           "Ctrl+V paste over (Paint)   Ctrl+Shift+V insert\n"
+                           "Ctrl+V insert   Ctrl+Shift+V paste over (Paint)\n"
                            "Pastes at the first selected cell.",
                   foreground="#888").pack(anchor="w", pady=(4, 0))
         return cf
@@ -568,6 +573,13 @@ class ToolHostMixin:
     def _tool_refresh_win(self):
         if getattr(self, "side_clip_var", None) is not None:
             self.side_clip_var.set(self.clip_text())
+        if getattr(self, "playpals", None) is not None:
+            key = hash(tuple(self.rgbs)) if self.rgbs is not None else None
+            if key != getattr(self, "_playpals_key", None):
+                self._playpals_key = key
+                self.playpals.refresh()        # working colours changed: re-mark
+            else:
+                self.playpals._sel_text()
         if self.tool_win is not None:
             self.tool_win.refresh()
         if getattr(self, "filter_win", None) is not None:
