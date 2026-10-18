@@ -700,33 +700,36 @@ def invoke_strip_mode(rest):
 
 # ==============================================================================
 # Mode: conform2palette  (standalone; repalettes every graphic in a WAD - native)
-#   dmake conform2palette input.wad [output.wad] [-i/-iwad iwad] [-pal source]
-#                                   [-keep | -replace]
+#   dmake conform2palette [input.wad [output.wad]] [-pal palette]
+#                         [-keep | -replace] [-h]
 #
-#   Converts every graphic in the input WAD to a target palette and writes a
-#   classic-format copy of the WAD. Doom pictures, flats, palettised PNGs and
-#   truecolour PNGs all come out as standard Doom pictures (or raw flats in a
-#   flat namespace). PLAYPAL is replaced with the target's 14 palettes.
-#   Every other lump is copied byte-for-byte; names, order, markers and
-#   namespaces never change.
+#   Converts every graphic in a WAD to a target palette and writes a
+#   classic-format copy. Doom pictures, flats, palettised PNGs and truecolour
+#   PNGs all come out as standard Doom pictures (or raw flats in a flat
+#   namespace). PLAYPAL is replaced with (or, if absent, given) the target's
+#   14 palettes. Every other lump is copied byte-for-byte; names, order,
+#   markers and namespaces never change.
 #
-#   Source palette : always the input WAD's own PLAYPAL (error if missing).
-#   Target palette : -pal, else the project palette (project mode only),
-#                    else the IWAD palette.
+#   Target palette : -pal <file or IWAD alias>, else the project palette
+#                    (project mode), else the fallback IWAD.
+#   Source palette : the input WAD's own PLAYPAL, else the fallback IWAD
+#                    (a WAD without PLAYPAL is drawn in the IWAD palette).
+#   Fallback IWAD  : project mode - doom-loader.conf, doommake.properties,
+#                    doom2. Outside a project - doom2.
 #
-#   Project mode (run from a DoomTools project root) only changes defaults:
-#     - input not found -> searched in src/wads/textures, then build
-#     - output default  -> src/wads/textures/<inputname>   (-keep: <stem>-palettised.wad)
-#     - palette         -> src/assets/palettes, build/convert/palettes,
-#                          src/convert/palettes
-#     - IWAD fallback   -> doom-loader.conf, doommake.properties, doom2
-#   Outside a project:
-#     - output default  -> <stem>-palettised.wad next to the input
-#                          (-replace: overwrite the input)
-#     - IWAD fallback   -> doom2
+#   No input WAD = batch mode: every .wad in src/wads/textures (project) or
+#   the current folder (outside a project), with a [y]es/[n]o/[a]ll/[s]kip
+#   all prompt per WAD. WADs already in the target palette are skipped.
 #
-#   The search folders are standard DoomTools project folders and are
-#   deliberately hardcoded (not in the settings file).
+#   Output:
+#     Project mode : overwrite in place (single-file input found elsewhere
+#                    is written to src/wads/textures). -keep writes
+#                    <stem>-palettised.wad instead.
+#     Folder mode  : <stem>-palettised.wad next to the input. -replace
+#                    overwrites the input instead.
+#
+#   The project folders are standard DoomTools folders and are deliberately
+#   hardcoded (not in the settings file).
 # ==============================================================================
 
 CONFORM_INPUT_DIRS   = [os.path.join("src", "wads", "textures"), "build"]
@@ -736,6 +739,8 @@ CONFORM_PALETTE_DIRS = [os.path.join("src", "assets", "palettes"),
                         os.path.join("src", "convert", "palettes")]
 CONFORM_DEFAULT_IWAD = "doom2"
 CONFORM_SUFFIX       = "-palettised"
+CONFORM_TOOL         = "dmake conform2palette"
+CONFORM_PROJECT_SUPPORT = True
 
 PNG_SIG = b"\x89PNG\r\n\x1a\n"
 
@@ -1404,7 +1409,7 @@ def find_project_palette():
 # ------------------------------------------------------------------------------
 def conform_entries(entries, matcher, table, playpal):
     stats = {"picture": 0, "flat": 0, "png-picture": 0, "png-flat": 0,
-             "playpal": 0, "copied": 0}
+             "playpal": 0, "copied": 0, "playpal_added": False}
     warnings = []
     stack = []
     out = []
@@ -1467,48 +1472,172 @@ def conform_entries(entries, matcher, table, playpal):
             stats["copied"] += 1
         out.append(new)
 
+    if stats["playpal"] == 0:
+        # Input had no PLAYPAL: give the output the target palette as its
+        # first lump, so it is self-describing.
+        out.insert(0, {"raw": b"PLAYPAL\x00", "name": "PLAYPAL", "off": 0,
+                       "size": len(playpal), "data": playpal})
+        stats["playpal"] = 1
+        stats["playpal_added"] = True
+
     return out, stats, warnings
+
+
+# ------------------------------------------------------------------------------
+# Palette resolution
+# ------------------------------------------------------------------------------
+def _iwad_lookup(key):
+    for k, p in IWADS.items():
+        if k.lower() == key.lower():
+            return p
+    return None
+
+
+def resolve_pal_arg(value):
+    """-pal value: an existing file is used as a palette source; anything
+    else is looked up as an IWAD alias. Returns (palettes, label)."""
+    if os.path.isfile(value):
+        return load_palette_file(value), value
+    path = _iwad_lookup(value)
+    if not path:
+        raise ConformError(f"-pal '{value}' is neither a file nor an IWAD alias. "
+                           f"Aliases: {IWAD_LIST}")
+    if not os.path.isfile(path):
+        raise ConformError(f"IWAD not found: {path}")
+    return load_palette_file(path), f"{path} (IWAD: {value})"
+
+
+def resolve_fallback_iwad(project):
+    """The IWAD whose palette is the fallback (target when nothing else is
+    found, and source for input WADs with no PLAYPAL). Project mode:
+    doom-loader.conf, doommake.properties, then doom2. Otherwise doom2."""
+    if project:
+        for p, src in project_iwad_candidates():
+            if os.path.isfile(p):
+                return p, src
+    path = _iwad_lookup(CONFORM_DEFAULT_IWAD)
+    if not path:
+        raise ConformError(f"default IWAD '{CONFORM_DEFAULT_IWAD}' is not defined "
+                           f"in the iwads list")
+    if not os.path.isfile(path):
+        raise ConformError(f"IWAD not found: {path}")
+    return path, CONFORM_DEFAULT_IWAD
+
+
+class ConformContext:
+    """Target palette + shared matcher for one run (single file or batch)."""
+
+    def __init__(self, pal_arg, project):
+        self.project = project
+        self._iwad = None
+        pals = None
+        if pal_arg:
+            pals, self.pal_label = resolve_pal_arg(pal_arg)
+        elif project:
+            path, pals = find_project_palette()
+            if pals:
+                self.pal_label = f"{path} (project)"
+        if pals is None:
+            path, src = resolve_fallback_iwad(project)
+            pals = load_palette_file(path)
+            self.pal_label = f"{path} (IWAD: {src})"
+        self.playpal, self.generated = build_playpal(pals)
+        self.tgt_pal0 = self.playpal[:768]
+        self.matcher = PaletteMatcher(self.tgt_pal0)
+
+    def iwad_pal0(self):
+        if self._iwad is None:
+            path, src = resolve_fallback_iwad(self.project)
+            pals = load_palette_file(path)
+            self._iwad = (pals[0], f"IWAD palette ({src})")
+        return self._iwad
+
+    def load_input(self, path):
+        """Read a WAD and work out its source palette. Returns
+        (magic, entries, src_pal0, src_label)."""
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except OSError as e:
+            raise ConformError(f"cannot read {path}: {e}")
+        magic, entries = wad_parse(data, path)
+        lump = wad_last_lump(entries, "PLAYPAL")
+        if lump:
+            if len(lump) < 768:
+                raise ConformError(f"{path}: PLAYPAL is shorter than 768 bytes")
+            return magic, entries, bytes(lump[:768]), "input PLAYPAL"
+        pal0, label = self.iwad_pal0()
+        return magic, entries, pal0, f"no PLAYPAL - read as {label}"
+
+    def convert(self, magic, entries, src_pal0, out_path):
+        table = self.matcher.index_table(src_pal0)
+        new_entries, stats, warnings = conform_entries(entries, self.matcher,
+                                                       table, self.playpal)
+        write_wad_atomic(out_path, magic, new_entries)
+        return new_entries, stats, warnings
+
+
+def write_wad_atomic(out_path, magic, entries):
+    """Write via a temp file in the output folder, then swap it into place,
+    so a failure never damages an existing file."""
+    out_dir = os.path.dirname(full_path(out_path))
+    fd, tmp = tempfile.mkstemp(prefix=".conform_", suffix=".tmp", dir=out_dir)
+    os.close(fd)
+    try:
+        wad_write(tmp, magic, entries)
+        os.replace(tmp, out_path)
+    except OSError as e:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise ConformError(f"cannot write {out_path}: {e}")
+
+
+def graphics_count(stats):
+    return (stats["picture"] + stats["flat"] + stats["png-picture"]
+            + stats["png-flat"])
 
 
 # ------------------------------------------------------------------------------
 # Mode entry
 # ------------------------------------------------------------------------------
 def invoke_conform_mode(rest):
-    if not rest:
-        show_conform_help()
-        sys.exit(0)
-
     positionals = []
-    in_arg = out_arg = pal_arg = iwad_arg = None
+    in_arg = out_arg = pal_arg = None
     keep = replace = False
 
     i = 0
     while i < len(rest):
         a = rest[i]
         al = a.lower()
-        if al in ("-i", "-iwad", "-pal", "-input", "-output"):
+        if al in ("-h", "-help", "--help", "/?"):
+            show_conform_help()
+            sys.exit(0)
+        if al in ("-pal", "-input", "-output"):
             if i + 1 >= len(rest):
-                print(f"Error: {a} requires a value")
+                print(RED(f"Error: {a} requires a value"))
                 sys.exit(2)
             v = rest[i + 1]
-            if al in ("-i", "-iwad"):
-                iwad_arg = v
-            elif al == "-pal":
+            if al == "-pal":
                 pal_arg = v
             elif al == "-input":
                 in_arg = v
             else:
                 out_arg = v
             i += 2
-        elif al == "-keep":
+        elif al == "-keep" and CONFORM_PROJECT_SUPPORT:
             keep = True
             i += 1
         elif al == "-replace":
             replace = True
             i += 1
         elif al.startswith("-") and len(al) > 1:
-            print(f"Error: unknown conform2palette option '{a}'")
-            print("Options: -i/-iwad  -pal  -input  -output  -keep  -replace")
+            opts = "-pal  -input  -output  " + ("-keep  " if CONFORM_PROJECT_SUPPORT else "") + "-replace  -h"
+            print(RED(f"Error: unknown option '{a}'"))
+            if al in ("-i", "-iwad"):
+                print("-iwad was removed: use -pal <iwad alias> instead (e.g. -pal doom2)")
+            print(f"Options: {opts}")
             sys.exit(2)
         else:
             positionals.append(a)
@@ -1519,30 +1648,55 @@ def invoke_conform_mode(rest):
     if out_arg is None and positionals:
         out_arg = positionals.pop(0)
     if positionals:
-        print(f"Note: ignoring extra argument(s): {' '.join(positionals)}")
-
-    if not in_arg:
-        show_conform_help()
-        sys.exit(0)
+        print(YEL(f"Note: ignoring extra argument(s): {' '.join(positionals)}"))
 
     try:
-        _run_conform(in_arg, out_arg, pal_arg, iwad_arg, keep, replace)
+        project = is_project_root() if CONFORM_PROJECT_SUPPORT else False
+        keep, replace = _conform_switch_notes(project, keep, replace)
+        if in_arg:
+            _run_conform_single(project, in_arg, out_arg, pal_arg, keep, replace)
+        else:
+            if out_arg:
+                raise ConformError("an output name needs an input WAD")
+            _run_conform_batch(project, pal_arg, keep, replace)
     except ConformError as e:
         print(RED(f"Error: {e}"))
         sys.exit(2)
+    except KeyboardInterrupt:
+        print("")
+        print(YEL("Cancelled."))
+        sys.exit(130)
     sys.exit(0)
 
 
-def _run_conform(in_arg, out_arg, pal_arg, iwad_arg, keep, replace):
-    project = is_project_root()
-
-    # ---- Mode-specific switches -------------------------------------------------
+def _conform_switch_notes(project, keep, replace):
     if project and replace:
         print(YEL("Note: -replace has no effect in project mode (in-place is the default)."))
         replace = False
     if not project and keep:
         print(YEL("Note: -keep has no effect outside a project (a renamed copy is the default)."))
         keep = False
+    return keep, replace
+
+
+def _label(text):
+    return GRY(f"  {text:<9}: ")
+
+
+def _print_header(title, ctx, rows):
+    print(WHT(f"{CONFORM_TOOL} - {title}"))
+    for k, v in rows:
+        print(_label(k) + CYN(v))
+    print(_label("Palette") + CYN(ctx.pal_label))
+    if ctx.generated:
+        print(" " * 13 + DGRY("(single palette - tints 1-13 generated)"))
+    print("")
+
+
+# ------------------------------------------------------------------------------
+# Single WAD
+# ------------------------------------------------------------------------------
+def _run_conform_single(project, in_arg, out_arg, pal_arg, keep, replace):
     if out_arg and (keep or replace):
         raise ConformError(f"{'-keep' if keep else '-replace'} cannot be combined "
                            f"with an explicit output name")
@@ -1568,20 +1722,18 @@ def _run_conform(in_arg, out_arg, pal_arg, iwad_arg, keep, replace):
             if in_path:
                 break
     if not in_path:
-        where = " (also searched " + ", ".join(CONFORM_INPUT_DIRS) + ")" if project else ""
+        where = (" (also searched " + ", ".join(CONFORM_INPUT_DIRS) + ")") if project else ""
         raise ConformError(f"input WAD not found: {in_arg}{where}")
 
     # ---- Output ---------------------------------------------------------------
     stem = os.path.splitext(os.path.basename(in_path))[0]
     make_out_dir = False
     if out_arg:
-        if os.path.dirname(out_arg):
+        if os.path.dirname(out_arg) or not project:
             out_path = out_arg
-        elif project:
+        else:
             out_path = os.path.join(CONFORM_OUTPUT_DIR, out_arg)
             make_out_dir = True
-        else:
-            out_path = out_arg
     elif project:
         name = f"{stem}{CONFORM_SUFFIX}.wad" if keep else os.path.basename(in_path)
         out_path = os.path.join(CONFORM_OUTPUT_DIR, name)
@@ -1597,98 +1749,25 @@ def _run_conform(in_arg, out_arg, pal_arg, iwad_arg, keep, replace):
             os.makedirs(out_dir, exist_ok=True)
         else:
             raise ConformError(f"output folder does not exist: {out_dir}")
-
     in_place = full_path(in_path).lower() == full_path(out_path).lower()
 
-    # ---- Read input + source palette ------------------------------------------
-    try:
-        with open(in_path, "rb") as f:
-            in_data = f.read()
-    except OSError as e:
-        raise ConformError(f"cannot read input WAD: {e}")
-    magic, entries = wad_parse(in_data, in_path)
+    # ---- Convert --------------------------------------------------------------
+    ctx = ConformContext(pal_arg, project)
+    magic, entries, src_pal0, src_label = ctx.load_input(in_path)
 
-    src_lump = wad_last_lump(entries, "PLAYPAL")
-    if not src_lump:
-        raise ConformError(f"{in_path} has no PLAYPAL - it already uses the IWAD "
-                           f"palette, so there is nothing to conform")
-    if len(src_lump) < 768:
-        raise ConformError(f"{in_path}: PLAYPAL is shorter than 768 bytes")
-    src_pal0 = bytes(src_lump[:768])
+    _print_header("repalette WAD graphics", ctx, [
+        ("Mode", "DoomTools project" if project else "folder"),
+        ("Input", in_path),
+        ("Source", src_label),
+        ("Output", out_path + ("  (in place)" if in_place else "")),
+    ])
 
-    # ---- Target palette ---------------------------------------------------------
-    pal_label = None
-    pals = None
-    if pal_arg:
-        if not os.path.isfile(pal_arg):
-            raise ConformError(f"palette source not found: {pal_arg}")
-        pals = load_palette_file(pal_arg)
-        pal_label = pal_arg
-    elif project:
-        path, pals = find_project_palette()
-        if pals:
-            pal_label = f"{path} (project)"
-
-    if pals is None:
-        iwad_path = None
-        if iwad_arg:
-            iwad_path = IWADS.get(iwad_arg)
-            if not iwad_path:
-                raise ConformError(f"unknown IWAD '{iwad_arg}'. Available: {IWAD_LIST}")
-            label = iwad_arg
-        else:
-            label = None
-            if project:
-                for p, src in project_iwad_candidates():
-                    if os.path.isfile(p):
-                        iwad_path, label = p, src
-                        break
-            if not iwad_path:
-                iwad_path = IWADS.get(CONFORM_DEFAULT_IWAD)
-                label = CONFORM_DEFAULT_IWAD
-                if not iwad_path:
-                    raise ConformError(f"default IWAD '{CONFORM_DEFAULT_IWAD}' is not "
-                                       f"defined in the settings iwads list")
-        if not os.path.isfile(iwad_path):
-            raise ConformError(f"IWAD not found: {iwad_path}")
-        pals = load_palette_file(iwad_path)
-        pal_label = f"{iwad_path} (IWAD: {label})"
-
-    playpal, generated = build_playpal(pals)
-    tgt_pal0 = playpal[:768]
-
-    print("dmake conform2palette - repalette WAD graphics")
-    print(f"  Mode       : {'DoomTools project' if project else 'standalone'}")
-    print(f"  Input WAD  : {in_path}")
-    print(f"  Output WAD : {out_path}{'  (in place)' if in_place else ''}")
-    print(f"  Palette    : {pal_label}")
-    if generated:
-        print(DGRY("               (single palette - tints 1-13 generated)"))
-    print("")
-
-    if tgt_pal0 == src_pal0:
-        print("Nothing to do: the input's palette already matches the target palette.")
+    if src_pal0 == ctx.tgt_pal0:
+        print(DGRY("Nothing to do: the input's palette already matches the target palette."))
         return
 
-    # ---- Convert --------------------------------------------------------------
-    matcher = PaletteMatcher(tgt_pal0)
-    table = matcher.index_table(src_pal0)
-    new_entries, stats, warnings = conform_entries(entries, matcher, table, playpal)
+    new_entries, stats, warnings = ctx.convert(magic, entries, src_pal0, out_path)
 
-    # ---- Write (temp file + swap, so a failure never damages anything) -----
-    fd, tmp = tempfile.mkstemp(prefix=".conform_", suffix=".tmp", dir=out_dir)
-    os.close(fd)
-    try:
-        wad_write(tmp, magic, new_entries)
-        os.replace(tmp, out_path)
-    except OSError as e:
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
-        raise ConformError(f"cannot write output WAD: {e}")
-
-    # ---- Report ---------------------------------------------------------------
     for w in warnings:
         print(YEL(f"  Warning: {w}"))
     if warnings:
@@ -1697,10 +1776,130 @@ def _run_conform(in_arg, out_arg, pal_arg, iwad_arg, keep, replace):
     print(f"  Flats remapped         : {stats['flat']}")
     print(f"  PNG -> Doom picture    : {stats['png-picture']}")
     print(f"  PNG -> flat            : {stats['png-flat']}")
-    print(f"  PLAYPAL replaced       : {stats['playpal']}")
+    print(f"  PLAYPAL                : {'added' if stats['playpal_added'] else 'replaced'}")
     print(f"  Copied unchanged       : {stats['copied']}")
     print("")
     print(GRN(f"Wrote {len(new_entries)} lump(s) -> {out_path}"))
+
+
+# ------------------------------------------------------------------------------
+# Batch: every WAD in src/wads/textures (project) or the current folder
+# ------------------------------------------------------------------------------
+def _ask_convert():
+    prompt = ("        Convert?  " + YEL("[y]") + "es  " + YEL("[n]") + "o  "
+              + YEL("[a]") + "ll  " + YEL("[s]") + "kip all : ")
+    while True:
+        try:
+            ans = input(prompt).strip().lower()
+        except EOFError:
+            print("")
+            return "s"
+        if ans[:1] in ("y", "n", "a", "s"):
+            return ans[:1]
+
+
+def _run_conform_batch(project, pal_arg, keep, replace):
+    folder = CONFORM_OUTPUT_DIR if project else "."
+    if not os.path.isdir(folder):
+        raise ConformError(f"folder not found: {folder}")
+    names = sorted((f for f in os.listdir(folder)
+                    if f.lower().endswith(".wad")
+                    and os.path.isfile(os.path.join(folder, f))), key=str.lower)
+
+    ctx = ConformContext(pal_arg, project)
+    if project:
+        mode = f"DoomTools project  ({folder})"
+        output = f"<name>{CONFORM_SUFFIX}.wad" if keep else "overwrite in place"
+    else:
+        mode = f"folder  ({full_path(folder)})"
+        output = "overwrite in place" if replace else f"<name>{CONFORM_SUFFIX}.wad"
+    _print_header("batch", ctx, [("Mode", mode), ("Output", output)])
+
+    if not names:
+        print(DGRY(f"  No WAD files found in {folder}"))
+        return
+
+    plan, already, previous, failed = [], [], [], []
+    for n in names:
+        p = os.path.join(folder, n)
+        stem = os.path.splitext(n)[0]
+        if not project and stem.lower().endswith(CONFORM_SUFFIX.lower()):
+            previous.append(n)
+            continue
+        try:
+            _m, _e, src_pal0, _l = ctx.load_input(p)
+        except ConformError as e:
+            failed.append((n, str(e)))
+            continue
+        if src_pal0 == ctx.tgt_pal0:
+            already.append(n)
+            continue
+        if project:
+            out = os.path.join(folder, f"{stem}{CONFORM_SUFFIX}.wad") if keep else p
+        else:
+            out = p if replace else os.path.join(folder, f"{stem}{CONFORM_SUFFIX}.wad")
+        plan.append((n, p, out))
+
+    parts = [f"{len(plan)} to convert"]
+    if already:
+        parts.append(f"{len(already)} already conformed")
+    if previous:
+        parts.append(f"{len(previous)} skipped")
+    if failed:
+        parts.append(f"{len(failed)} unreadable")
+    print("  " + WHT(f"Found {len(names)} WAD(s): ") + ", ".join(parts))
+    width = max(len(n) for n in names)
+    for n in already:
+        print(DGRY(f"    = {n:<{width}}  already conformed"))
+    for n in previous:
+        print(DGRY(f"    - {n:<{width}}  previous output"))
+    for n, err in failed:
+        print(RED(f"    x {n:<{width}}  {err}"))
+    print("")
+
+    converted = skipped = 0
+    errors = len(failed)
+    mode_all = mode_skip = False
+    total = len(plan)
+    for k, (n, p, out) in enumerate(plan, 1):
+        dest = "in place" if full_path(out).lower() == full_path(p).lower() \
+            else os.path.basename(out)
+        print("  " + DCYN(f"[{k}/{total}] ") + WHT(f"{n:<{width}}") + GRY(f"  -> {dest}"))
+        if mode_skip:
+            print(DGRY("        - skipped"))
+            skipped += 1
+            continue
+        if not mode_all:
+            ans = _ask_convert()
+            if ans == "n":
+                print(DGRY("        - skipped"))
+                skipped += 1
+                continue
+            if ans == "s":
+                mode_skip = True
+                print(DGRY("        - skipped"))
+                skipped += 1
+                continue
+            if ans == "a":
+                mode_all = True
+        try:
+            magic, entries, src_pal0, _l = ctx.load_input(p)
+            _ne, stats, warnings = ctx.convert(magic, entries, src_pal0, out)
+            for w in warnings:
+                print(YEL(f"        ! {w}"))
+            extra = ", PLAYPAL added" if stats["playpal_added"] else ""
+            print(GRN(f"        + {graphics_count(stats)} graphics converted{extra}"))
+            converted += 1
+        except ConformError as e:
+            print(RED(f"        x {e}"))
+            errors += 1
+
+    print("")
+    print(DGRY("  " + "-" * 48))
+    fail_txt = f"Failed {errors}"
+    print("  " + GRN(f"Converted {converted}") + "   " + GRY(f"Skipped {skipped}")
+          + "   " + GRY(f"Already conformed {len(already)}") + "   "
+          + (RED(fail_txt) if errors else GRY(fail_txt)))
 
 
 # ==============================================================================
@@ -1820,7 +2019,7 @@ def show_dmake_help():
     print(CYN("  texturex  ") + "[-x1|-x2] [-file wad] [-output txt] - Extract TEXTURE1/TEXTURE2 (both if neither)")
     print(CYN("  editpatch ") + "[-txt]                             - Open DECOHack patch editor GUI")
     print(CYN("  strip     ") + "input.wad [strip flags]            - Strip lumps out of a WAD (see STRIP OPTIONS)")
-    print(CYN("  conform2palette ") + "in.wad [out.wad] [opts]    - Repalette every graphic in a WAD (see CONFORM2PALETTE)")
+    print(CYN("  conform2palette ") + "[in.wad [out.wad]] [opts]  - Repalette WAD graphics; no WAD = batch (see CONFORM2PALETTE)")
     print(CYN("  update    ") + "                                   - Update DoomTools to the latest version")
     print(CYN("  --targets ") + "                                   - Show all available doommake targets")
     print(CYN("  --help    ") + "                                   - Show this help")
@@ -1868,11 +2067,11 @@ def show_dmake_help():
     print("")
 
     print(WHT("CONFORM2PALETTE OPTIONS"))
-    print(YEL("  -i, -iwad  ") + f"IWAD whose palette is the fallback target (default: {CONFORM_DEFAULT_IWAD})")
-    print(YEL("  -pal src   ") + "Target palette: WAD, palette PNG, .pal, .gpl or raw PLAYPAL")
+    print(YEL("  -pal x     ") + "Target palette: IWAD alias (doom2, tnt...) or a palette file")
     print(YEL("  -keep      ") + f"Project mode: write <name>{CONFORM_SUFFIX}.wad instead of in place")
     print(YEL("  -replace   ") + "Outside a project: overwrite the input instead of a renamed copy")
-    print("             " + DGRY("Run 'dmake conform2palette' alone for the full help."))
+    print("             " + DGRY("No WAD given = batch with a y/n/all/skip-all prompt per WAD."))
+    print("             " + DGRY("Run 'dmake conform2palette -h' for the full help."))
     print("")
 
     print(WHT("EXAMPLES"))
@@ -1888,7 +2087,8 @@ def show_dmake_help():
     print(GRY("  dmake texturex -x2 -file mod.wad      ") + DGRY("- Extract TEXTURE2 from mod.wad to current dir"))
     print(GRY("  dmake strip mod.wad --clean           ") + DGRY("- Full strip -> mod_cleaned.wad"))
     print(GRY("  dmake strip mod.wad --lumps MAP01     ") + DGRY("- Strip only the MAP01 marker lump"))
-    print(GRY("  dmake conform2palette mod.wad -pal mypal.png ") + DGRY(f"- -> mod{CONFORM_SUFFIX}.wad"))
+    print(GRY("  dmake conform2palette mod.wad -pal doom2  ") + DGRY("- Repalette mod.wad to doom2"))
+    print(GRY("  dmake conform2palette                     ") + DGRY("- Batch: every WAD in the folder"))
     print(GRY("  dmake -- -skill 4 -warp 1             ") + DGRY("- Build then launch with doom.bat"))
     print(GRY("  dmake make -- -skill 4 -warp 1        ") + DGRY("- Run make then launch with doom.bat"))
     print(GRY("  dmake update                          ") + DGRY("- Update DoomTools"))
@@ -1909,7 +2109,7 @@ def show_targets_help():
     print(CYN("  dmake texturex             - Extract TEXTURE1/TEXTURE2 from a WAD"))
     print(CYN("  dmake editpatch            - Open DECOHack patch editor GUI"))
     print(CYN("  dmake strip input.wad      - Strip lumps out of a WAD (dmake strip for help)"))
-    print(CYN("  dmake conform2palette in.wad - Repalette every graphic in a WAD (run alone for help)"))
+    print(CYN("  dmake conform2palette      - Repalette WAD graphics (-h for help)"))
     print(CYN("  dmake update               - Update DoomTools to the latest version"))
     print("")
     print(WHT("DEFAULT targets:"))
@@ -2006,52 +2206,75 @@ def show_strip_help():
 # HELP: dmake conform2palette  (shown when run with no input WAD)
 # ==============================================================================
 def show_conform_help():
+    t = CONFORM_TOOL
     print("")
     print(DCYN("=============================================================================="))
-    print(WHT("  DMAKE CONFORM2PALETTE  -  repalette every graphic in a WAD"))
+    print(WHT(f"  {t.upper()}  -  repalette every graphic in a WAD"))
     print(DCYN("=============================================================================="))
     print("")
     print("  Converts every graphic in a WAD to a new palette and writes a classic-")
     print("  format copy. Doom pictures, flats, palettised PNGs and truecolour PNGs")
     print("  all come out as standard Doom pictures (or raw flats in a flat")
-    print("  namespace). PLAYPAL is replaced with the target's 14 palettes. Every")
-    print("  other lump (colormaps, TEXTUREx, ENDOOM, sounds, maps...) is copied")
-    print("  byte-for-byte. Names, order, markers and namespaces never change.")
+    print("  namespace). PLAYPAL is replaced with (or given) the target's 14")
+    print("  palettes. Every other lump (colormaps, TEXTUREx, ENDOOM, sounds,")
+    print("  maps...) is copied byte-for-byte. Names, order and markers never change.")
     print("")
 
     print(WHT("USAGE"))
-    print(GRY("  dmake conform2palette input.wad [output.wad] [-iwad name] [-pal source]"))
-    print(GRY("                                  [-keep | -replace]"))
+    keep = " | -keep" if CONFORM_PROJECT_SUPPORT else ""
+    print(GRY(f"  {t} input.wad [output.wad] [-pal palette] [-replace{keep}]"))
+    print(GRY(f"  {t} [-pal palette] [-replace{keep}]") + DGRY("      (batch)"))
     print("")
 
     print(WHT("OPTIONS"))
-    print(YEL("  -i, -iwad name ") + f"IWAD palette used as the fallback target (default: {CONFORM_DEFAULT_IWAD})")
-    print("                 " + GRY("Options: ") + DGRY(IWAD_LIST))
-    print(YEL("  -pal source    ") + "Target palette. Accepts: WAD with PLAYPAL, raw PLAYPAL lump,")
-    print("                 " + "DoomTools palette PNG (256 wide, one palette per row),")
-    print("                 " + "SLADE pal0.png (16x16 grid), colourmap PNG (row 0),")
-    print("                 " + ".pal (raw, JASC or RIFF; one or many palettes), GIMP .gpl")
+    print(YEL("  -pal x         ") + "Target palette: an IWAD alias, or a palette file:")
+    print("                 " + GRY("IWAD aliases: ") + DGRY(IWAD_LIST))
+    print("                 " + "WAD with PLAYPAL, raw PLAYPAL lump, DoomTools palette")
+    print("                 " + "PNG (256 wide, one palette per row), SLADE pal0.png")
+    print("                 " + "(16x16 grid), colourmap PNG (row 0), .pal (raw, JASC")
+    print("                 " + "or RIFF; one or many palettes), GIMP .gpl")
     print(YEL("  -input / -output ") + "Explicit alternatives to the positional names")
-    print(YEL("  -keep          ") + f"Project mode only: write <name>{CONFORM_SUFFIX}.wad")
-    print(YEL("  -replace       ") + "Outside a project only: overwrite the input WAD")
+    if CONFORM_PROJECT_SUPPORT:
+        print(YEL("  -keep          ") + f"Project mode only: write <name>{CONFORM_SUFFIX}.wad")
+        print(YEL("  -replace       ") + "Outside a project only: overwrite the input WAD")
+    else:
+        print(YEL("  -replace       ") + f"Overwrite the input instead of writing <name>{CONFORM_SUFFIX}.wad")
+    print(YEL("  -h, --help     ") + "Show this help")
     print("")
 
-    print(WHT("OUTSIDE A DOOMTOOLS PROJECT"))
+    print(WHT("BATCH MODE  (no input WAD)"))
+    where = "src/wads/textures (project) or the current folder" if CONFORM_PROJECT_SUPPORT \
+        else "the current folder"
+    print(GRY(f"  Every .wad in {where} is offered"))
+    print(GRY("  in turn:  ") + YEL("[y]") + GRY("es  ") + YEL("[n]") + GRY("o  ")
+          + YEL("[a]") + GRY("ll (no more prompts)  ") + YEL("[s]") + GRY("kip all"))
+    print(GRY(f"  WADs already in the target palette and earlier *{CONFORM_SUFFIX}.wad"))
+    print(GRY("  outputs are listed but not offered."))
+    print("")
+
+    if CONFORM_PROJECT_SUPPORT:
+        print(WHT("OUTSIDE A DOOMTOOLS PROJECT"))
+    else:
+        print(WHT("DEFAULTS"))
     print(GRY(f"  Output  : <name>{CONFORM_SUFFIX}.wad next to the input (-replace: overwrite)"))
-    print(GRY(f"  Palette : -pal, else the -iwad palette (default {CONFORM_DEFAULT_IWAD})"))
+    print(GRY(f"  Palette : -pal, else {CONFORM_DEFAULT_IWAD}"))
     print("")
 
-    print(WHT("INSIDE A DOOMTOOLS PROJECT ROOT"))
-    print(GRY("  Input   : as given, else searched in src/wads/textures, then build"))
-    print(GRY(f"  Output  : src/wads/textures/<name>.wad (-keep: <name>{CONFORM_SUFFIX}.wad)"))
-    print(GRY("            A bare output filename is also placed in src/wads/textures."))
-    print(GRY("  Palette : -pal, else the first found in src/assets/palettes,"))
-    print(GRY("            build/convert/palettes, src/convert/palettes"))
-    print(GRY("  IWAD    : -iwad, else doom-loader.conf, doommake.properties, doom2"))
-    print("")
+    if CONFORM_PROJECT_SUPPORT:
+        print(WHT("INSIDE A DOOMTOOLS PROJECT ROOT"))
+        print(GRY("  Input   : as given, else searched in src/wads/textures, then build"))
+        print(GRY(f"  Output  : overwrite in place in src/wads/textures (-keep: <name>{CONFORM_SUFFIX}.wad)"))
+        print(GRY("            A bare output filename is also placed in src/wads/textures."))
+        print(GRY("  Palette : -pal, else the first found in src/assets/palettes,"))
+        print(GRY("            build/convert/palettes, src/convert/palettes,"))
+        print(GRY("            else the project IWAD"))
+        print(GRY(f"  IWAD    : doom-loader.conf, doommake.properties, else {CONFORM_DEFAULT_IWAD}"))
+        print("")
 
     print(WHT("NOTES"))
-    print(GRY("  - The input WAD must have its own PLAYPAL (that is the source palette)."))
+    print(GRY("  - Source palette: the input's own PLAYPAL; a WAD without one is read"))
+    fb = "the project IWAD palette (or doom2)" if CONFORM_PROJECT_SUPPORT else f"the {CONFORM_DEFAULT_IWAD} palette"
+    print(GRY(f"    as {fb}."))
     print(GRY("  - A single-palette source gets the standard 13 tint palettes generated."))
     print(GRY("  - Nearest colour by weighted RGB; ties go to the lowest index."))
     print(GRY("  - PNG grAb offsets carry over; partial alpha is ordered-dithered."))
@@ -2060,13 +2283,13 @@ def show_conform_help():
     print("")
 
     print(WHT("EXAMPLES"))
-    print(GRY("  dmake conform2palette res.wad -pal mypal.png      ") + DGRY(f"- -> res{CONFORM_SUFFIX}.wad"))
-    print(GRY("  dmake conform2palette res.wad new.wad -iwad tnt   ") + DGRY("- TNT palette, -> new.wad"))
-    print(GRY("  dmake conform2palette res.wad -pal p.pal -replace ") + DGRY("- overwrite res.wad"))
-    print(GRY("  dmake conform2palette res.wad                     ") + DGRY("- (project) auto palette, in place"))
-    print(GRY("  dmake conform2palette res.wad -keep               ") + DGRY(f"- (project) -> res{CONFORM_SUFFIX}.wad"))
+    print(GRY(f"  {t} res.wad -pal mypal.png   ") + DGRY(f"- -> res{CONFORM_SUFFIX}.wad"))
+    print(GRY(f"  {t} res.wad -pal doom2       ") + DGRY("- convert to the doom2 palette"))
+    print(GRY(f"  {t} res.wad new.wad -pal tnt ") + DGRY("- TNT palette, -> new.wad"))
+    print(GRY(f"  {t}                          ") + DGRY("- batch: offer every WAD"))
+    if CONFORM_PROJECT_SUPPORT:
+        print(GRY(f"  {t} res.wad -keep            ") + DGRY(f"- (project) -> res{CONFORM_SUFFIX}.wad"))
     print("")
-
 
 # ==============================================================================
 # ENTRY POINT
