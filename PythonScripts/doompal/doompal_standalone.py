@@ -8,7 +8,7 @@ import base64
 import operator
 from pathlib import Path
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 
 # ============================================================================
 # DEPENDENCY CHECK
@@ -46,23 +46,22 @@ PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 GENERATE_BASE = "genDoom"
 
-# Tint table for PLAYPAL rows 1-13: (tint colour, amount)
-TINTS = [
-    None,
-    ((252, 2, 3), 0.11),
-    ((255, 0, 0), 0.22),
-    ((255, 0, 0), 0.33),
-    ((255, 0, 0), 0.44),
-    ((255, 0, 0), 0.55),
-    ((255, 0, 0), 0.66),
-    ((255, 0, 0), 0.77),
-    ((255, 0, 0), 0.88),
-    ((215, 185, 68), 0.12),
-    ((215, 185, 68), 0.25),
-    ((215, 185, 68), 0.375),
-    ((215, 185, 68), 0.50),
-    ((3, 253, 3), 0.125),
-]
+# Tint table for PLAYPAL rows 1-13: (target colour, shift, steps).
+# SLADE "Generate Palettes" (Doom, 14 palettes) via Palette::idtint:
+#   new = c + (target - c) * shift / steps   (C integer maths, clamped 0..255)
+TINTS = (
+    [None]
+    + [((255, 0, 0), a, 9) for a in range(1, 9)]      # 1-8   pain
+    + [((215, 186, 69), a, 8) for a in range(1, 5)]   # 9-12  items
+    + [((0, 256, 0), 1, 8)]                           # 13    radsuit (256 is real, clamps)
+)
+
+# Row groups for the blank-playpal tint overlays: (suffix, rows)
+TINT_OVERLAYS = (
+    ("_pain", range(1, 9)),
+    ("_items", range(9, 13)),
+    ("_radsuit", range(13, 14)),
+)
 
 
 # ============================================================================
@@ -373,35 +372,33 @@ def best_color(r, g, b, palette):
 # PALETTE GENERATION
 # ============================================================================
 
-def _clamp8(x):
-    if x < 0:
-        return 0
-    if x > 255:
-        return 255
-    return int(round(x))
-
-
-def _blend(src, tint, amount):
-    sr, sg, sb = src
-    tr, tg, tb = tint
-    return (
-        _clamp8(sr * (1.0 - amount) + tr * amount),
-        _clamp8(sg * (1.0 - amount) + tg * amount),
-        _clamp8(sb * (1.0 - amount) + tb * amount),
-    )
+def idtint(c, target, shift, steps):
+    """
+    SLADE's Palette::idtint for one colour, each channel separately:
+        new = c + (target - c) * shift / steps
+    Whole numbers only, C division (truncates toward zero, NOT floor),
+    then clamped to 0..255.
+    """
+    out = []
+    for v, t in zip(c, target):
+        d = (t - v) * shift
+        q = abs(d) // steps
+        out.append(max(0, min(255, v + (q if d >= 0 else -q))))
+    return tuple(out)
 
 
 def expand_palette_to_14(pal0):
     """
-    Approximate the 14 Doom palettes from pal0:
+    Build the 14 Doom palettes from pal0 exactly like SLADE's
+    "Generate Palettes" (Doom, 14 palettes):
       0 normal, 1-8 red (damage/berserk), 9-12 yellow (bonus), 13 green (radsuit)
     """
     if len(pal0) != COLORS:
         raise ValueError("pal0 must have 256 colours")
     palettes = [list(pal0)]
     for row in range(1, PALETTES_PER_PLAYPAL):
-        tint, amount = TINTS[row]
-        palettes.append([_blend(c, tint, amount) for c in pal0])
+        target, shift, steps = TINTS[row]
+        palettes.append([idtint(c, target, shift, steps) for c in pal0])
     return palettes
 
 
@@ -491,13 +488,35 @@ def save_slade_grid(pal, path, cell):
     img.save(path)
 
 
-def save_split_png(path):
-    """Write the 256x14 RGBA tint overlay (row 0 transparent)."""
+def _tint_rgba(row):
+    """Overlay colour for a tint row: target clamped to 255, alpha = shift/steps."""
+    target, shift, steps = TINTS[row]
+    r, g, b = (min(255, max(0, v)) for v in target)
+    return (r, g, b, int(round(255 * shift / steps)))
+
+
+def save_split_png(path, rows=None):
+    """
+    Write a 256x14 RGBA tint overlay. Only `rows` (default 1-13) are filled;
+    every other row is transparent. Alpha blending is a guide only: it can
+    be 1 level off SLADE's whole-number maths.
+    """
+    if rows is None:
+        rows = range(1, PALETTES_PER_PLAYPAL)
     img = Image.new("RGBA", (COLORS, PALETTES_PER_PLAYPAL), (0, 0, 0, 0))
-    for row in range(1, PALETTES_PER_PLAYPAL):
-        (r, g, b), amount = TINTS[row]
-        img.paste((r, g, b, int(amount * 255)), (0, row, COLORS, row + 1))
+    for row in rows:
+        img.paste(_tint_rgba(row), (0, row, COLORS, row + 1))
     img.save(path)
+
+
+def save_tint_overlays(base):
+    """Write <base>_pain/_items/_radsuit.png overlays; return the paths."""
+    written = []
+    for suffix, rows in TINT_OVERLAYS:
+        p = Path(f"{base}{suffix}.png")
+        save_split_png(p, rows)
+        written.append(p)
+    return written
 
 
 # ============================================================================
@@ -864,6 +883,7 @@ def cmd_batch(o):
     p = Path(f"{base}_playpal_blank.png")
     save_palettes_png([src.pal0] * PALETTES_PER_PLAYPAL, p)
     written.append(p)
+    written.extend(save_tint_overlays(base))
 
     p = Path(f"{base}_colormap_blank.png")
     save_colormap_png(generate_colormap(src.pal0, False), src.pal0, p)
@@ -902,6 +922,14 @@ def cmd_playpal(o):
     else:
         out = out_file(src.path, o.output, suffix, ".png")
         save_palettes_png(palettes, out)
+        if o.blank:
+            # <out stem minus _playpal_blank> + _pain/_items/_radsuit.png
+            stem = str(out)[:-len(".png")]
+            if stem.endswith("_playpal_blank"):
+                stem = stem[:-len("_playpal_blank")]
+            overlays = save_tint_overlays(stem)
+            report([f"{out}  ({note})", *overlays])
+            return 0
     report([f"{out}  ({note})"])
     return 0
 
@@ -926,9 +954,10 @@ def cmd_blank(o):
     base = out_base(src.path, o.output)
     p1 = Path(f"{base}_playpal_blank.png")
     save_palettes_png([src.pal0] * PALETTES_PER_PLAYPAL, p1)
+    overlays = save_tint_overlays(base)
     p2 = Path(f"{base}_colormap_blank.png")
     save_colormap_png(generate_colormap(src.pal0, False), src.pal0, p2)
-    report([p1, p2])
+    report([p1, *overlays, p2])
     return 0
 
 
@@ -1161,12 +1190,12 @@ MAIN_HELP = """\
   {CM}cube{R}       {FL}<input>{R}                        .cube LUT for image editors
   {CM}playpal{R}    {FL}<input> [--blank] [--slade]{R}    256x14 PLAYPAL PNG (or SLADE .pal)
   {CM}colourmap{R}  {FL}<input> [--blank]{R}              256x34 colourmap PNG with lighting
-  {CM}blank{R}      {FL}<input>{R}                        Blank playpal + blank colourmap
+  {CM}blank{R}      {FL}<input>{R}                        Blank playpal + tint overlays + blank colourmap
   {CM}slade{R}      {FL}<input> [--playpal] [--cell N]{R}
                                             SLADE 16x16 grid PNG (or .pal)
   {CM}extract{R}    {FL}<wad> [--boom [NAME]] [--boomlist]{R}
                                             PLAYPAL / COLORMAP / Boom maps from a WAD
-  {CM}split{R}      {FL}<input>{R}                        Transparent tint overlay PNG
+  {CM}split{R}      {FL}<input>{R}                        Transparent tint overlay PNG (SLADE tints)
 
 {HD}COMMON OPTIONS:{R}
   {FL}-o, --output <name>{R}   Output file, or base name for multi-file commands
@@ -1255,7 +1284,10 @@ CMD_HELP = {
   Writes the .cube LUT, PLAYPAL, colourmap, blank versions of both and
   the tint overlay.
   - PLAYPAL uses the input's own 14 palettes when it has them (WAD,
-    raw PLAYPAL, 256x14 PNG); otherwise tints are generated from pal0.
+    raw PLAYPAL, 256x14 PNG); otherwise tints are generated from pal0
+    with SLADE's exact "Generate Palettes" maths (Doom, 14 palettes).
+  - The blank playpal comes with three tint overlays (pain, items,
+    radsuit) to layer over it in a 2D app.
   - The colourmap is the input's own when it carries one (WAD COLORMAP,
     raw colourmap lump); otherwise it is generated from pal0.
   - WAD inputs also get a PNG of every Boom colourmap (C_START/C_END).
@@ -1271,6 +1303,9 @@ CMD_HELP = {
   <name>_playpal.png
   <name>_colormap.png
   <name>_playpal_blank.png
+  <name>_pain.png              {DM}rows 1-8 tint overlay{R}
+  <name>_items.png             {DM}rows 9-12 tint overlay{R}
+  <name>_radsuit.png           {DM}row 13 tint overlay{R}
   <name>_colormap_blank.png
   <name>_split.png
   <name>_<BOOMNAME>.png        {DM}WAD inputs with Boom colourmaps{R}""",
@@ -1312,8 +1347,15 @@ CMD_HELP = {
 
 {HD}DESCRIPTION:{R}
   Writes all 14 palettes. Inputs that already hold 14 palettes are
-  copied as-is; single palettes get Doom-style tints generated:
-    1-8 red (damage/berserk), 9-12 yellow (pickups), 13 green (radsuit)
+  copied as-is; single palettes get tints generated with SLADE's exact
+  "Generate Palettes" maths (Doom, 14 palettes), so the result matches
+  SLADE byte for byte:
+    1-8   red (damage/berserk)  target (255,0,0)    shift 1-8 / 9
+    9-12  yellow (pickups)      target (215,186,69) shift 1-4 / 8
+    13    green (radsuit)       target (0,256,0)    shift 1   / 8
+  Each channel: c + (target - c) * shift / steps, integer maths, clamped.
+  With --blank (PNG) three tint overlays are also written to layer over
+  the blank in a 2D app.
 
 {HD}OPTIONS:{R}
   {FL}--blank{R}               pal0 on all 14 rows (no tints)
@@ -1325,7 +1367,10 @@ CMD_HELP = {
 
 {HD}OUTPUTS:{R}
   <name>_playpal.png           {DM}--slade: <name>_playpal.pal{R}
-  <name>_playpal_blank.png     {DM}with --blank (.pal with --slade){R}""",
+  <name>_playpal_blank.png     {DM}with --blank (.pal with --slade){R}
+  <name>_pain.png              {DM}with --blank, PNG only: rows 1-8 overlay{R}
+  <name>_items.png             {DM}with --blank, PNG only: rows 9-12 overlay{R}
+  <name>_radsuit.png           {DM}with --blank, PNG only: row 13 overlay{R}""",
 
 "colourmap": """\
 {TI}doompal colourmap{R} - 256x34 colourmap PNG
@@ -1370,15 +1415,22 @@ CMD_HELP = {
   Writes a PLAYPAL with pal0 on all 14 rows (no tints) and a colourmap
   with no lighting (rows 0-31 full bright, invulnerability and black
   rows kept). Handy as a base for custom tint/lighting work.
+  Also writes three 256x14 RGBA tint overlays (pain rows 1-8, items
+  rows 9-12, radsuit row 13; other rows transparent) using SLADE's
+  "Generate Palettes" targets, to layer over the blank in a 2D app.
+  Alpha blending is only a guide: it can be 1 level off SLADE's maths.
 
 {HD}OPTIONS:{R}
-  {FL}-o, --output <name>{R}   Base name for both files
+  {FL}-o, --output <name>{R}   Base name for all files
   {FL}-p, --pal <file>{R}      Palette for raw colourmap inputs
 
 """ + INPUTS_HELP + """
 
 {HD}OUTPUTS:{R}
   <name>_playpal_blank.png
+  <name>_pain.png              {DM}rows 1-8 tint overlay{R}
+  <name>_items.png             {DM}rows 9-12 tint overlay{R}
+  <name>_radsuit.png           {DM}row 13 tint overlay{R}
   <name>_colormap_blank.png""",
 
 "slade": """\
@@ -1394,8 +1446,9 @@ CMD_HELP = {
 
 {HD}DESCRIPTION:{R}
   Writes pal0 as a 16x16 grid PNG like SLADE's palette export, or with
-  --playpal a SLADE binary PLAYPAL (.pal, 14 palettes, tints generated
-  if the input only has pal0).
+  --playpal a SLADE binary PLAYPAL (.pal, 14 palettes). If the input
+  only has pal0 the tints are generated with SLADE's exact "Generate
+  Palettes" maths (Doom, 14 palettes), so the file matches SLADE's.
 
 {HD}OPTIONS:{R}
   {FL}--cell N{R}              Grid cell size in pixels (default 8 = 128x128)
@@ -1449,9 +1502,11 @@ CMD_HELP = {
 
 {HD}DESCRIPTION:{R}
   Writes a 256x14 RGBA PNG holding only the PLAYPAL tints: row 0
-  transparent, rows 1-13 the damage / pickup / radsuit tint colour at
-  its blend strength as alpha. Layer it over a blank playpal to rebuild
-  the tinted rows in an image editor.
+  transparent, rows 1-13 the damage / pickup / radsuit target colour
+  (clamped to 255) with alpha = 255 * shift / steps, from SLADE's exact
+  "Generate Palettes" maths. Layer it over a blank playpal to rebuild
+  the tinted rows in an image editor. Alpha blending is only a guide:
+  it can be 1 level off the whole-number maths that playpal/slade use.
 
 {HD}OPTIONS:{R}
   {FL}-o, --output <name>{R}   Output file (.png added if missing)
