@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # ==============================================================================
 # dmake_script.py
+# Version: 1.0.0
 # ------------------------------------------------------------------------------
 # Wrapper for doommake with optional post-run of doom.bat
 #
@@ -42,6 +43,8 @@
 #
 # Pure stdlib. No dependencies.
 # ==============================================================================
+
+DMAKE_VERSION = "1.0.0"
 
 import locale
 import os
@@ -184,7 +187,8 @@ def invoke_update_mode():
 def invoke_create_mode(rest):
     iwad_name    = DEFAULTS.get("create_iwad", "doom2")
     hack_type    = DEFAULTS.get("create_hacktype", "dsdhacked")
-    dir_name     = DEFAULTS.get("create_directory", "./_DT_Projects/_Current")
+    fallback_dir = DEFAULTS.get("create_directory", "./_DT_Projects")
+    dir_name     = None   # None = no -d given
     default_name = DEFAULTS.get("create_name", "megawad")
     no_deco      = False
     hacktype_set = False
@@ -235,14 +239,34 @@ def invoke_create_mode(rest):
         print("the decohack module entirely. Use one or the other, not both.")
         sys.exit(2)
 
-    # Guard: never touch a non-empty target directory. Checked first, before
-    # anything else runs (no doommake, no directory creation, no tweak).
-    target_dir = dir_name if dir_name else os.getcwd()
-
-    if not test_dir_empty(target_dir):
-        print(f"Error: Directory is not empty: {target_dir}")
-        print("dmake create requires an empty target directory.")
-        sys.exit(2)
+    # Resolve the target directory. Checked first, before anything else runs
+    # (no doommake, no directory creation, no tweak).
+    #   -d given          : use exactly that dir; must be empty (no fallback)
+    #   no -d, cwd empty  : build right here, no subdir
+    #   no -d, cwd in use : build in the create_directory fallback
+    #                       (default ./_DT_Projects); must be empty
+    dir_note = ""
+    if dir_name:
+        if not test_dir_empty(dir_name):
+            print(f"Error: Directory is not empty: {dir_name}")
+            print("dmake create requires an empty target directory.")
+            sys.exit(2)
+    elif test_dir_empty(os.getcwd()):
+        dir_name = None
+        dir_note = ". (current, empty)"
+    else:
+        fb = normalize_dirpath(fallback_dir) if fallback_dir else ""
+        if not fb:
+            print(f"Error: Current directory is not empty: {os.getcwd()}")
+            print("No create_directory fallback is set in __suite_settings.txt.")
+            sys.exit(2)
+        if not test_dir_empty(fb):
+            print("Error: Current directory is not empty, and neither is the fallback:")
+            print(f"  {fb}")
+            print("dmake create requires an empty target directory.")
+            sys.exit(2)
+        dir_name = fb
+        dir_note = f"{fb} (current dir not empty)"
 
     iwad_path = IWADS.get(iwad_name)
 
@@ -254,7 +278,7 @@ def invoke_create_mode(rest):
         print("Hack Type    : (none - no decohack module)")
     else:
         print(f"Hack Type    : {hack_type}")
-    print(f"Directory    : {dir_name}")
+    print(f"Directory    : {dir_note if dir_note else dir_name}")
     print("")
 
     if not iwad_path:
@@ -308,15 +332,17 @@ def invoke_create_mode(rest):
 
 # ==============================================================================
 # Mode: explode  (standalone)
-#   dmake explode filename.wad [-i iwad] [-p]
+#   dmake explode filename.wad [-i iwad] [-p] [--raw]
+#   --raw : explode to pure lumps (no --convert / --convert-palette)
 # ==============================================================================
 def invoke_explode_mode(rest):
     iwad_name   = DEFAULTS.get("create_iwad", "doom2")
     use_wad_pal = False
+    raw_mode    = False
 
     if not rest or not rest[0]:
         print("Error: WAD filename required")
-        print("Usage: dmake explode filename.wad [-i iwad]")
+        print("Usage: dmake explode filename.wad [-i iwad] [-p] [--raw]")
         sys.exit(2)
 
     explode_wad = rest[0]
@@ -331,6 +357,9 @@ def invoke_explode_mode(rest):
             i += 2
         elif a == "-p":
             use_wad_pal = True
+            i += 1
+        elif a == "--raw":
+            raw_mode = True
             i += 1
         else:
             i += 1  # Unknown argument - skip it
@@ -348,7 +377,12 @@ def invoke_explode_mode(rest):
     print("")
     print(f"WAD File     : {explode_wad}")
     print(f"Project Name : {project_name}")
-    if use_wad_pal:
+    if raw_mode:
+        print("Mode         : raw (no conversion)")
+        print(f"IWAD Path    : {iwad_path if iwad_path else ''}")
+        if use_wad_pal:
+            print(YEL("Note: -p has no effect with --raw (no palette is used)."))
+    elif use_wad_pal:
         print(f"PLAYPAL      : {explode_wad} (from input WAD)")
     else:
         print(f"IWAD Path    : {iwad_path if iwad_path else ''}")
@@ -363,10 +397,14 @@ def invoke_explode_mode(rest):
 
     # Feed the interactive prompts (name, IWAD, patch type) via stdin
     feed = f"{clean_stem}\n{iwad_path}\ndsdhacked\n"
-    err = run_cmd("doommake",
-                  [project_name, "--convert-palette", palette,
-                   "--convert", "--explode", explode_wad],
-                  feed=feed)
+    if raw_mode:
+        # Pure lumps: no --convert, so --convert-palette is irrelevant.
+        # --explode <wad> must stay last (anything after it = template name).
+        args = [project_name, "--explode", explode_wad]
+    else:
+        args = [project_name, "--convert-palette", palette,
+                "--convert", "--explode", explode_wad]
+    err = run_cmd("doommake", args, feed=feed)
     sys.exit(err)
 
 
@@ -1999,7 +2037,7 @@ def rest_after_keyword(arg_list, keyword):
 def show_dmake_help():
     print("")
     print(DCYN("=============================================================================="))
-    print(WHT("  DMAKE  -  doommake wrapper with optional doom.bat launch"))
+    print(WHT(f"  DMAKE v{DMAKE_VERSION}  -  doommake wrapper with optional doom.bat launch"))
     print(DCYN("=============================================================================="))
     print("")
     print("  dmake forwards arguments to doommake. If " + YEL('"--"') + " is present, doom.bat is run")
@@ -2014,7 +2052,7 @@ def show_dmake_help():
 
     print(WHT("SPECIAL COMMANDS"))
     print(CYN("  create    ") + "[Name] [-i/-h/-d ...] [-nodeco]     - Create a new tweaked DoomMake project")
-    print(CYN("  explode   ") + "filename.wad [-i iwad] [-p]        - Explode a WAD into a DoomMake project")
+    print(CYN("  explode   ") + "filename.wad [-i iwad] [-p] [--raw] - Explode a WAD into a DoomMake project")
     print(CYN("  watch     ") + "                                   - Watch project, rebuild on file changes")
     print(CYN("  texturex  ") + "[-x1|-x2] [-file wad] [-output txt] - Extract TEXTURE1/TEXTURE2 (both if neither)")
     print(CYN("  editpatch ") + "[-txt]                             - Open DECOHack patch editor GUI")
@@ -2032,8 +2070,8 @@ def show_dmake_help():
     print(YEL("  -h, -hacktype   ") + f"ht    DECOHack patch type to use (default: {DEFAULTS.get('create_hacktype', 'dsdhacked')})")
     print("                  " + GRY("Options: ") + DGRY(HACK_TYPE_LIST))
     print("                  " + DGRY("Error if combined with -nodeco."))
-    print(YEL("  -d, -directory  ") + "dir   Directory to create the project in")
-    print("                  " + DGRY(f"(default: {DEFAULTS.get('create_directory', './_DT_Projects/_Current')} - must be empty if it already exists)"))
+    print(YEL("  -d, -directory  ") + "dir   Directory to create the project in (must be empty)")
+    print("                  " + DGRY("Without -d: current dir if empty, else " + str(DEFAULTS.get('create_directory', './_DT_Projects'))))
     print(YEL("  -nodeco         ") + "      Skip the decohack module entirely - no DEHACKED patch at all")
     print("")
 
@@ -2042,6 +2080,8 @@ def show_dmake_help():
     print("             " + GRY("Options: ") + DGRY(IWAD_LIST))
     print(YEL("  -p         ") + "Use the input WAD's own PLAYPAL instead of the IWAD")
     print("             " + DGRY("(use for WADs with custom palettes)"))
+    print(YEL("  --raw      ") + "Explode to pure lumps - no graphics/sound conversion")
+    print("             " + DGRY("(-p is ignored with --raw)"))
     print("")
 
     print(WHT("TEXTUREX OPTIONS"))
@@ -2075,13 +2115,14 @@ def show_dmake_help():
     print("")
 
     print(WHT("EXAMPLES"))
-    print(GRY("  dmake create                          ") + DGRY("- megawad in ./_DT_Projects/_Current, doom2"))
-    print(GRY("  dmake create MyWAD                    ") + DGRY("- MyWAD in ./_DT_Projects/_Current, doom2"))
+    print(GRY("  dmake create                          ") + DGRY("- megawad here if empty, else ./_DT_Projects"))
+    print(GRY("  dmake create MyWAD                    ") + DGRY("- MyWAD here if empty, else ./_DT_Projects"))
     print(GRY("  dmake create MyWAD -i doom -d MyDir   ") + DGRY("- New doom project in MyDir folder"))
     print(GRY("  dmake create -iwad tnt -nodeco        ") + DGRY("- megawad, tnt IWAD, no DEHACKED patch"))
     print(GRY("  dmake explode summoner.wad            ") + DGRY("- Explode WAD using doom2 palette"))
     print(GRY("  dmake explode summoner.wad -p         ") + DGRY("- Explode WAD using its own palette"))
     print(GRY("  dmake explode summoner.wad -i tnt -p  ") + DGRY("- Explode with TNT IWAD, own palette"))
+    print(GRY("  dmake explode summoner.wad --raw      ") + DGRY("- Explode to pure lumps, no conversion"))
     print(GRY("  dmake texturex                       ") + DGRY(r"- Extract BOTH lumps from .\build\textures.wad"))
     print(GRY("  dmake texturex -x1                    ") + DGRY(r"- Extract only TEXTURE1 from .\build\textures.wad"))
     print(GRY("  dmake texturex -x2 -file mod.wad      ") + DGRY("- Extract TEXTURE2 from mod.wad to current dir"))

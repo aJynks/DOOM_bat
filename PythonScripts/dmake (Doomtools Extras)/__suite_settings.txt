@@ -104,7 +104,7 @@
     // --------------------------------------------------------------------------
     "defaults": {
         "create_name":      "megawad",
-        "create_directory": "./_DT_Projects/_Current",
+        "create_directory": "./_DT_Projects",
         "create_iwad":      "doom2",
         "create_hacktype":  "dsdhacked",
         "run_port":         "nyan",
